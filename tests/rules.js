@@ -23,7 +23,7 @@ global.URL={createObjectURL:()=>'',revokeObjectURL(){}};global.Blob=class{};
 global.localStorage={setItem(){},getItem(){return null},removeItem(){}};
 ['show','hud','dots','tabs','saveState','hdTitle','pane','sndBtn','skipN'].forEach(id=>{global[id]=doc.getElementById(id)});
 const app=new Function(src+`;return {DB:()=>DB,blank,migrate,sample,go,SCset,scoreOf,standings,applyScores,
-  prizeRows,prizeTotal,prizeOf,teams,TM,LK,luckyPool,drawLucky,pzSkip,pzAdd,budget,buildSlides,PZ,RUN,
+  prizeRows,giftsOf,giftOf,teams,TM,LK,luckyPool,drawLucky,pzSkip,pzAdd,budget,buildSlides,PZ,RUN,
   setDB:x=>{DB=x},prizeSet,skillRows,skillKinds,holeWarn,holeFit,holeApplyFit,mApply,mSet,mQuery,
   get slides(){return slides}};`)();
 const ok=(l,c,x='')=>console.log((c?'  OK  ':'  NG  ')+l+(x?'  '+x:''));
@@ -40,8 +40,8 @@ A=[]; app.pzSkip();
 chk('2回目は追加なし', A[0].includes('追加するものがありませんでした'), A[0]);
 
 console.log('\n=== 2. 年齢賞 ===');
-app.PZ().rank.push({label:'最年長',kind:'oldest',n:1,amt:1000});
-app.PZ().rank.push({label:'最年少',kind:'youngest',n:1,amt:1000});
+app.PZ().rank.push({label:'最年長',kind:'oldest',n:1,item:'',src:'host'});
+app.PZ().rank.push({label:'最年少',kind:'youngest',n:1,item:'',src:'host'});
 const R=app.prizeRows();
 const oldest=R.find(r=>r.kind==='oldest').who, youngest=R.find(r=>r.kind==='youngest').who;
 const bds=app.RUN().map(p=>[p.n,p.bd]).sort((a,b)=>a[1]<b[1]?-1:1);
@@ -50,9 +50,9 @@ chk('最年少が正しい', youngest===bds[bds.length-1][0], youngest+'('+bds[b
 
 console.log('\n=== 3. ベストOUT／IN・ハンディ最大 ===');
 app.SCset('entry','all');
-app.PZ().rank.push({label:'ベストOUT',kind:'bestOut',n:1,amt:1000});
-app.PZ().rank.push({label:'ベストIN',kind:'bestIn',n:1,amt:1000});
-app.PZ().rank.push({label:'HDCP最大',kind:'maxhc',n:1,amt:1000});
+app.PZ().rank.push({label:'ベストOUT',kind:'bestOut',n:1,item:'',src:'host'});
+app.PZ().rank.push({label:'ベストIN',kind:'bestIn',n:1,item:'',src:'host'});
+app.PZ().rank.push({label:'HDCP最大',kind:'maxhc',n:1,item:'',src:'host'});
 const R2=app.prizeRows();
 const bo=R2.find(r=>r.kind==='bestOut').who, bi=R2.find(r=>r.kind==='bestIn').who;
 const outs=app.RUN().map(p=>{const s=app.scoreOf(p.n);let t=0;for(let i=1;i<=9;i++)t+=+s.h[i];return [p.n,t];}).sort((a,b)=>a[1]-b[1]);
@@ -82,19 +82,19 @@ chk('2名当選', L.length===2, L.join(' / '));
 chk('重複しない', new Set(L).size===L.length);
 const wonNames=new Set(app.prizeRows().filter(r=>r.who).map(r=>r.who));
 chk('既に受賞した人は当たらない', !L.some(n=>wonNames.has(n)));
-chk('当選者に賞金が付く', app.prizeOf(L[0])>=app.PZ().lucky, L[0]+' '+app.prizeOf(L[0])+'円');
+/* V1（2026-09-28、M1）：賞は品物。金額ではなく「ラッキー賞の賞品が付くか」を見る */
+chk('当選者に賞品が付く', app.giftsOf(L[0]).some(([l])=>l==='ラッキー賞'), L[0]+' '+app.giftsOf(L[0]).map(x=>x.join(':')).join('、'));
 app.LK().exclude=false;
 chk('除外を切ると全員が対象', app.luckyPool().length===app.DB().players.length);
 app.LK().exclude=true;
 
-console.log('\n=== 6. 賞金合計と収支 ===');
-const P=app.prizeTotal();
-chk('団体賞が合計に入る', P.team===app.PZ().team*app.TM().top, P.team);
-chk('ラッキー賞が合計に入る', P.lucky===app.PZ().lucky*app.LK().count, P.lucky);
-chk('総額＝順位＋技能＋団体＋ラッキー賞', P.all===P.rank+P.skill+P.team+P.lucky, P.all);
+console.log('\n=== 6. 賞品と収支（V1・M1：賞は品物、収支は経費だけ） ===');
+chk('団体賞の賞品は品名と出どころで持つ', typeof app.giftOf('team')==='object'&&'item' in app.giftOf('team')&&'src' in app.giftOf('team'));
+chk('ラッキー賞の賞品も品名と出どころで持つ', 'item' in app.giftOf('lucky')&&'src' in app.giftOf('lucky'));
+chk('賞に金額の項目が無い', ['near','nearAny','drako','team','lucky','birdie','eagle'].every(k=>typeof app.PZ()[k]!=='number')
+    &&app.PZ().rank.every(r=>!('amt' in r)), Object.keys(app.PZ()).join(','));
 const B=app.budget();
-chk('収支の支出に団体賞', B.exp.some(x=>x.l==='団体賞'));
-chk('収支の支出にラッキー賞', B.exp.some(x=>x.l==='ラッキー賞'));
+chk('収支の支出に賞の行が無い（賞金を払わない）', !B.exp.some(x=>/団体賞|ラッキー賞|順位賞|技能賞/.test(x.l)), B.exp.map(x=>x.l).join('・'));
 
 console.log('\n=== 7. 発表画面 ===');
 app.buildSlides();
@@ -178,8 +178,7 @@ console.log('  -- 受賞者なしのホール --');
 const nr=SR.find(r=>r.key==='near');
 chk('ニアピン11番は空欄のまま', (nr.list.find(x=>x.h===11)||{}).who==='');
 chk('ニアピンは4ホール中3ホールで受賞', nr.n===4&&nr.wonN===3, nr.wonN+'/'+nr.n);
-chk('用意する賞金 4,000円', nr.total===4000, nr.total);
-chk('実際に出る賞金 3,000円', nr.wonTotal===3000, nr.wonTotal);
+chk('技能賞は品名で持ち、金額の項目が無い', typeof nr.gift==='object'&&!('total' in nr)&&!('unit' in nr)&&!('wonTotal' in nr));
 
 console.log('  -- 記録の書き方がまちまちでもそのまま残る --');
 [[2,'1.2m'],[4,'40cm'],[15,'2m50']].forEach(([h,rec])=>
@@ -200,11 +199,12 @@ chk('何でも18番は川島　文吾', (na.list.find(x=>x.h===18)||{}).who==='�
 chk('ドラコン8番は川島　武夫', (dk.list.find(x=>x.h===8)||{}).who==='川島　武夫',
     (dk.list.find(x=>x.h===8)||{}).who);
 
-console.log('  -- 同一人物が2つ受賞したら合算される --');
-chk('川島　俊之 の技能賞は2,000円', app.prizeOf('川島　俊之')===2000, app.prizeOf('川島　俊之')+'円');
-chk('川島　文吾 は1,000円', app.prizeOf('川島　文吾')===1000, app.prizeOf('川島　文吾')+'円');
-chk('川島　武夫 は1,000円', app.prizeOf('川島　武夫')===1000, app.prizeOf('川島　武夫')+'円');
-chk('受賞なしの人は0円', app.prizeOf('邊見　克己')===0, app.prizeOf('邊見　克己')+'円');
+console.log('  -- 同一人物が2つ受賞したら、賞品が2つ並ぶ --');
+const sk=n=>app.giftsOf(n).filter(([l])=>/ニアピン|ドラコン/.test(l)).length;
+chk('川島　俊之 の技能賞は2つ', sk('川島　俊之')===2, app.giftsOf('川島　俊之').map(x=>x[0]).join('・'));
+chk('川島　文吾 は1つ', sk('川島　文吾')===1, sk('川島　文吾'));
+chk('川島　武夫 は1つ', sk('川島　武夫')===1, sk('川島　武夫'));
+chk('受賞なしの人は0', app.giftsOf('邊見　克己').length===0, app.giftsOf('邊見　克己').length);
 
 console.log('  -- 順位賞と合算される --');
 [['川島　俊之',81,7.2],['白石　徹',92,18],['邊見　克己',101,26.4]].forEach(([n,g,hc])=>{
@@ -214,21 +214,19 @@ console.log('  -- 順位賞と合算される --');
    賞金がどう積み上がるかを内訳で確かめる（合算漏れ・二重計上の検知） */
 const mine=app.prizeRows().filter(r=>r.who==='川島　俊之');
 chk('優勝を受賞', mine.some(r=>r.kind==='rank'&&r.n===1),
-    mine.map(r=>r.label+' '+r.amt+'円').join(' ＋ '));
+    mine.map(r=>r.label).join(' ＋ '));
 chk('ベスグロも受賞（グロス81で最少）', mine.some(r=>r.kind==='best'));
-const rankSum=mine.reduce((a,b)=>a+(+b.amt||0),0);
-chk('順位賞のぶんは 12,000円（優勝10,000＋ベスグロ2,000）', rankSum===12000, rankSum+'円');
-chk('技能賞のぶんは 2,000円（何でも9番＋ドラコン16番）',
-    app.prizeOf('川島　俊之')-rankSum===2000, (app.prizeOf('川島　俊之')-rankSum)+'円');
-chk('合計 14,000円が合算される', app.prizeOf('川島　俊之')===14000,
-    app.prizeOf('川島　俊之')+'円');
-chk('二重に数えていない', app.prizeOf('川島　俊之')===rankSum+2000);
+/* V1（M1）：賞金の合算ではなく、受ける賞が漏れず重ならずに並ぶかを見る（合算漏れ・二重計上の検知と同じ狙い） */
+const G4=app.giftsOf('川島　俊之');
+chk('順位賞は2つ（優勝＋ベスグロ）', mine.length===2, mine.map(r=>r.label).join('・'));
+chk('技能賞と合わせて4つの賞品が並ぶ', G4.length===4, G4.map(x=>x[0]).join('・'));
+chk('二重に数えていない', new Set(G4.map(x=>x[0])).size===G4.length||G4.filter(([l])=>/ニアピン|ドラコン/.test(l)).length===2,
+    G4.map(x=>x[0]).join('・'));
 
-console.log('  -- 賞金の総額 --');
-chk('技能賞の小計 8,000円（用意するぶん）', app.prizeTotal().skill===8000, app.prizeTotal().skill);
-chk('受賞者なしの1,000円は経費に残る',
-    SR.reduce((a,b)=>a+b.total-b.wonTotal,0)===1000,
-    SR.reduce((a,b)=>a+b.total-b.wonTotal,0)+'円');
+console.log('  -- 受賞者なしのホール --');
+chk('受賞者なしのホールは賞品が出ない（受賞7件に7つ）',
+    ['川島　俊之','川島　文吾','川島　武夫'].concat(app.DB().players.map(p=>p.n)).filter((n,i,a)=>a.indexOf(n)===i)
+      .reduce((a,n)=>a+sk(n),0)===SR.reduce((a,b)=>a+b.wonN,0), SR.reduce((a,b)=>a+b.wonN,0));
 
 console.log('  -- 発表画面 --');
 app.buildSlides();

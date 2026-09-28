@@ -52,9 +52,9 @@ const app = new Function(src + `
     kAdd,gAdd,pAdd,bulkPreview,bulkApply,pEdit,pMove,pSort,gAuto,gAddGroup,gpStart,gpDrop,prizeSet,
     buildSlides,render,go,sample,touch,tabList,
     RUN,VOT,FRAMES,inGroup,standings,hcOf,grossOf,coursePar,applyScores,scoreOf,SCset,
-    get slides(){return slides}, get LS_OK(){return LS_OK},skillRows,feeTotal,settle,prizeTotal,sampleHard,holeWarn,frameCheck,collectPlan,dayToggle,tabAll,hiddenTabs,get TAB(){return TAB},prizeRows,
+    get slides(){return slides}, get LS_OK(){return LS_OK},skillRows,settle,sampleHard,billOf,giftsOf,giftOf,itemText,prizeCapIssue,holeWarn,frameCheck,collectPlan,dayToggle,tabAll,hiddenTabs,get TAB(){return TAB},prizeRows,
     /* 2026-09-20：追加ルール（大波・小波・おしどり・早出・イーグル/バーディー・よくある賞プリセット） */
-    waveOf,startOf,birdieRows,birdieTotal,prizeOf,pzPreset,rankWinner,tieCmp,
+    waveOf,startOf,birdieRows,pzPreset,rankWinner,tieCmp,
     setPhase,PHASE,phOpen,useSet,flowSteps,nextStep,payToggle,get NEWTABS(){return NEWTABS},
     get FOLD(){return FOLD},payOnly,get PAYONLY(){return PAYONLY},yen,sideHtml,btmHtml,pageHead,resultText,copyResult,sideCount,foldSet,foldAll,foldOpen,goStep,netFix,scFocus,scoreCheck,tieWhy,SCset,BG,PZ,setLS:v=>{LS_OK=v},
     SD:()=>({paySettle:typeof paySettle==='function'?paySettle:null,payCover:typeof payCover==='function'?payCover:null,payWhy:typeof payWhy==='function'?payWhy:null,cancelOf:typeof cancelOf==='function'?cancelOf:null,cancelCard:typeof cancelCard==='function'?cancelCard:null,budget:typeof budget==='function'?budget:null,sideCount0:typeof sideCount0==='function'?sideCount0:null,scoreState:typeof scoreState==='function'?scoreState:null,scoreOf:typeof scoreOf==='function'?scoreOf:null}),
@@ -99,7 +99,8 @@ chk('1組4名', app.inGroup(1).length === 4, app.inGroup(1).length+'名');
 const K = app.calcK(), G = app.calcG();
 chk('馬券100口', K.units === 100, K.units + '口');
 chk('GTO50口', G.units === 50, G.units + '口');
-chk('回収 100×200+50×500 = 45,000円', K.sales + G.sales === 45000, K.sales + G.sales + '円');
+/* V1（2026-09-28、M1）：予想に代金は無い。回収額ではなく、お金の項目を持たないことを見る */
+chk('予想の集計はお金を持たない（売上・配当が無い）', !('sales' in K)&&!('pay' in K)&&!('sales' in G)&&!('pay' in G));
 
 console.log('\n=== 4. 重複は口数でまとまる ===');
 /* サンプル①は予想を締め切った状態（段階6）。足すので解除しておく */
@@ -121,14 +122,14 @@ console.log('  最多の買い目', pop[0], pop[1] + '口');
 app.DB().result.low = [D.players[0].n, D.players[5].n, D.players[9].n];
 D.players.forEach((p, i) => app.DB().result.gross[p.n] = 85 + (i * 4) % 34);
 const K2 = app.calcK(), G2 = app.calcG(), B2 = app.calcB();
-chk('馬券の配当が出る', K2.win > 0 && K2.pay > 0, K2.win + '口 / ' + K2.pay + '円');
-chk('配当×口数 ≤ 売上', K2.pay * K2.win <= K2.sales);
-chk('罰金の対象者が出る', B2.list.length > 0, B2.list.length + '名 / ' + B2.total + '円');
+chk('馬券の的中口が出る', K2.win > 0, K2.win + '口');
+chk('的中口数 ≤ 有効な口数', K2.win <= K2.units);
+chk('罰金の勝負で負けた人が出る（金額ではなく人数）', B2.list.length > 0&&B2.list.every(x=>x.lost>0&&!('amt' in x)), B2.list.length + '名');
 chk('選抜者3名', B2.sel.filter(Boolean).length === 3, B2.sel.join(' / '));
 chk('選抜者は罰金対象外', !B2.list.some(x => B2.sel.includes(x.n)));
 const L = app.ledger();
-chk('精算の払戻合計が配当と一致',
-  L.reduce((s, x) => s + x.back, 0) === K2.pay * K2.win + (G2.refund ? G2.refundTotal : G2.pay * G2.win));
+chk('台帳の的中口数の合計が的中口数と一致',
+  L.reduce((s, x) => s + x.kw, 0) === K2.win && L.reduce((s, x) => s + x.gw, 0) === G2.win);
 
 console.log('\n=== 6. ニアピン・ドラコン ===');
 app.prizeSet('near', 12, 'who', D.players[3].n);
@@ -262,10 +263,9 @@ chk('18ホールすべて埋まっている',
       return SD.meta.sc.par.every((_,k)=>+s.h[k+1]>0);}));
 console.log('  -- 予想の結果が出ている --');
 chk('当選枠が決まっている', /^\d+-\d+$/.test(SD.result.frame), SD.result.frame);
-chk('馬券に的中口がある', SK.win>0, SK.win+'口 → '+SK.pay+'円/口');
-chk('配当が100円未満切り捨て', SK.pay%100===0, SK.pay+'円');
+chk('馬券に的中口がある', SK.win>0, SK.win+'口');
 chk('下位3名が決まっている', SD.result.low.filter(Boolean).length===3, SD.result.low.join(' / '));
-chk('GTOにも的中口がある（全額返金にならない）', SG.win>0&&!SG.refund, SG.win+'口 → '+SG.pay+'円/口');
+chk('GTOにも的中口がある（的中なしにならない）', SG.win>0&&!SG.nohit, SG.win+'口');
 console.log('  -- 技能賞に空欄が無い --');
 app.skillRows().forEach(r=>chk(r.label+' が全ホール埋まっている', r.wonN===r.n, `${r.wonN}/${r.n}ホール`));
 chk('記録もすべて入っている',
@@ -278,20 +278,19 @@ chk('選抜者が3名決まっている', SB.sel.filter(Boolean).length===3, SB.
 chk('選抜者と下位3名が完全一致していない',
     SB.sel.join('|')!==SS.worst3.map(r=>r.n).join('|'),
     '選抜 '+SB.sel.join('/')+' ／ 下位 '+SS.worst3.map(r=>r.n).join('/'));
-chk('罰金の対象者がいる', SB.list.length>0, SB.list.length+'名 計'+SB.total+'円');
+chk('罰金の勝負で負けた人がいる', SB.list.length>0, SB.list.length+'名 計'+SB.lostSum+'敗');
 chk('得票が並んでいない（手動指定が要らない）', !SB.tie);
 console.log('  -- 収支が組める --');
-chk('会費 6,000×16＝96,000円', app.feeTotal()===96000, app.feeTotal());
+/* V1（2026-09-28、M1）：収支は経費だけ。支払額は 13,500＋3,000＋3,000＝19,500円で全員同じ */
 {
   const S2=app.settle(), playAll=S2.reduce((a,b)=>a+(b.play||0),0);
-  chk('徴収合計＝プレー代＋会費＋馬券＋GTO',
-      S2.reduce((a,b)=>a+b.bill,0)===playAll+96000+SK.sales+SG.sales,
-      `プレー代${playAll} ＋会費96000 ＋馬券${SK.sales} ＋GTO${SG.sales} = ${S2.reduce((a,b)=>a+b.bill,0)}円`);
-  chk('事前の見積りと当日の徴収がほぼ合う',
-      Math.abs(S2.reduce((a,b)=>a+b.bill,0)-app.collectPlan().total)<=16,
-      '徴収'+S2.reduce((a,b)=>a+b.bill,0)+' / 見積り'+app.collectPlan().total);
+  chk('支払額の合計＝経費の合計（予想・賞金・原資は入らない）',
+      S2.reduce((a,b)=>a+b.bill,0)===playAll, `経費${playAll} = ${S2.reduce((a,b)=>a+b.bill,0)}円`);
+  chk('全員 19,500円', S2.every(x=>x.bill===19500), [...new Set(S2.map(x=>x.bill))].join(','));
+  chk('事前の見積りと当日の支払額が一致する', S2.reduce((a,b)=>a+b.bill,0)===app.collectPlan().grand,
+      '支払'+S2.reduce((a,b)=>a+b.bill,0)+' / 見積り'+app.collectPlan().grand);
 }
-chk('賞金の総額が出る', app.prizeTotal().all>0, app.prizeTotal().all+'円');
+chk('賞品の品名が入っている（サンプル）', app.prizeRows().some(r=>r.item), app.prizeRows().map(r=>r.item).join('・'));
 
 console.log('\n=== サンプル②　つまずきやすい大会 ===');
 /* 当日いちばん迷うのは、決まりきらない場面。同点・同票・欠席・無効・
@@ -329,14 +328,14 @@ const why=[...HK.bad,...HG.bad].map(r=>r.why);
 chk('無くなった枠を指名した口', why.some(w=>/無くなった枠/.test(w)));
 chk('出走しない方を指名した口', why.some(w=>/出走しない方/.test(w)));
 chk('同じ人を2回指名した口', why.some(w=>/同じ人を2回/.test(w)));
-chk('掛金が返る', HK.badTotal+HG.badTotal>0, (HK.badTotal+HG.badTotal)+'円');
+chk('無効の口は数えない（返金は無い）', HK.badUnits+HG.badUnits>0&&!('badTotal' in HK)&&!('badTotal' in HG), (HK.badUnits+HG.badUnits)+'口');
 console.log('  -- 技能賞に該当者のいないホール --');
 const sr2=app.skillRows();
 chk('該当者のいないホールがある', sr2.some(r=>r.wonN<r.n),
     sr2.map(r=>r.label+' '+r.wonN+'/'+r.n).join(' '));
-chk('用意する賞金と実際に出る賞金がずれる',
-    sr2.reduce((a,b)=>a+b.total,0)>sr2.reduce((a,b)=>a+b.wonTotal,0),
-    sr2.reduce((a,b)=>a+b.total,0)+'円 → '+sr2.reduce((a,b)=>a+b.wonTotal,0)+'円');
+chk('該当者のいないホールの賞品は出ない（出る賞品は受賞の数だけ）',
+    sr2.reduce((a,b)=>a+b.n,0)>sr2.reduce((a,b)=>a+b.wonN,0),
+    sr2.reduce((a,b)=>a+b.n,0)+'ホール → '+sr2.reduce((a,b)=>a+b.wonN,0)+'件');
 console.log('  -- 対象ホールの警告が出る --');
 chk('パーと噛み合わない設定になっている', app.holeWarn().length>0,
     app.holeWarn().map(w=>w.label).join('、')||'警告なし');
@@ -430,9 +429,9 @@ app.sample(); global.flush();
   console.log('  -- 当日にする --');
   app.setPhase('day');
   chk('タブが16から10に減る', app.tabList().length===10, app.tabList().length+'個');
-  /* 賞金・収支は金額を決める画面なので準備に入る（当日の集金は「集金」画面） */
+  /* 賞品・経費は金額を決める画面なので準備に入る（当日の集金は「集金」画面） */
   chk('準備の6タブが畳まれる',
-      app.hiddenTabs().map(x=>x[1]).join('/')==='大会設定/追加ルール/参加者/組み合わせ/予想入力/賞金・収支',
+      app.hiddenTabs().map(x=>x[1]).join('/')==='大会設定/追加ルール/参加者/組み合わせ/予想入力/賞品・経費',
       app.hiddenTabs().map(x=>x[1]).join('/'));
   chk('当日に使うタブは残る（大会ハブも）',
       ['hub','collect','score','prize','rank','sum','result','share','data','help']
@@ -440,7 +439,7 @@ app.sample(); global.flush();
   chk('古い形の dayMode も立つ', app.DB().meta.dayMode===true);
   chk('畳んだ段階が1行で出る（消えていない）', /phOpen\('prep',true\)[^>]*>(✓ )?準備 6項目 ▸/.test(tabs()), (tabs().match(/準備 \d項目 ▸/)||[''])[0]);
   chk('準備のタブを開いていたら当日の最初のタブ（集金）へ', app.TAB==='collect', app.TAB);
-  chk('畳んだことを案内に出す', /準備のタブ（大会設定・追加ルール・参加者・組み合わせ・予想入力・賞金・収支）は畳んでいます/.test(pane()));
+  chk('畳んだことを案内に出す', /準備のタブ（大会設定・追加ルール・参加者・組み合わせ・予想入力・賞品・経費）は畳んでいます/.test(pane()));
 
   console.log('  -- 畳んだ段階は押せば開く --');
   app.phOpen('prep',true);
@@ -524,16 +523,16 @@ app.sample(); global.flush();
        新しい大会で最初に知らせるのは正しい動き */
     O.meta.nearHoles=[3,7,11,16]; O.meta.drakoHoles=[4,14];
     chk('直すと参加者へ進む', app.nextStep().n.label==='参加者を登録する', app.nextStep().n.label);
-    O.players=[{n:'甲',org:'',bd:'',g:0,f:0,vote:true,fee:true,feeAmt:''},
-               {n:'乙',org:'',bd:'',g:1,f:0,vote:true,fee:true,feeAmt:''},
-               {n:'丙',org:'',bd:'',g:0,f:0,vote:true,fee:false,feeAmt:''}];
+    O.players=[{n:'甲',org:'',bd:'',g:0,f:0,vote:true,fee:true},
+               {n:'乙',org:'',bd:'',g:1,f:0,vote:true,fee:true},
+               {n:'丙',org:'',bd:'',g:0,f:0,vote:true,fee:false}];
     const g=app.nextStep().n;
     chk('組の決まっていない人を数える（予想のみは数えない）', g.label==='組み合わせを決める'&&g.rest==='残り1名', g.label+' '+g.rest);
     /* 2026-09-20：参加のしかたで「予想のみ」を選んだあとに、原資の対象（fee）だけを
        個別に付け直しても「組み合わせを決める」の残り人数に戻ってこないことを確かめる。
        付け直す前は原資の対象がオフ（joinSetの効果）で「予想のみ」に数えられており、
        付け直した後も参加のしかたの選択そのものは変わっていないはずなので、件数は変わらない */
-    O.players.push({n:'丁',org:'',bd:'',g:0,f:0,vote:false,fee:true,feeAmt:''});
+    O.players.push({n:'丁',org:'',bd:'',g:0,f:0,vote:false,fee:true});
     const di=O.players.length-1;
     app.S4().joinSet(di,'vote');
     app.pEdit(di,'fee',true);
@@ -620,7 +619,7 @@ app.sample(); global.flush(); app.setPhase('prep'); app.go('meta');
   app.go('rules');
   chk('ルールのカードが12枚', (P().match(/class="mod rcard/g)||[]).length===12, (P().match(/class="mod rcard/g)||[]).length);
   chk('表彰式の飾り罫（.rule）と名前が重ならない', !/class="mod rule/.test(P()));
-  chk('3つのまとまりに分ける', ['競技','予想ゲーム','賞とお金'].every(t=>P().includes('<div class="rule-gt">'+t+'</div>')));
+  chk('3つのまとまりに分ける', ['競技','予想ゲーム','賞と経費'].every(t=>P().includes('<div class="rule-gt">'+t+'</div>')));
   chk('使っている数を出す', /11個を使っています/.test(P()), (P().match(/\d+個を使っています/)||[''])[0]);
   app.go('meta');
   console.log('  -- 詳しく --');
@@ -654,9 +653,10 @@ app.sample(); global.flush(); app.setPhase('prep'); app.go('meta');
   D.meta.nearHoles=keep; app.FOLD.holes=false; app.render();
   app.goStep('meta','sec-holes');
   chk('送ると畳んだ中が開く', app.FOLD.holes===true&&isOpen('holes')[0]);
-  const fee=app.BG().fee; app.BG().fee=100; app.render();
-  chk('賞金が原資を超えるとお金の欄が開く', isOpen('budget')[0]&&/賞金の原資と当日集める額[\s\S]{0,200}要確認/.test(P()));
-  app.BG().fee=fee; app.foldAll(false);
+  /* V1（2026-09-28、M1）：原資は無い。賞品購入費が1人あたりの上限を超えると経費の欄が開く */
+  const cap=app.BG().prizeCap; app.BG().prizeCap=1000; app.render();
+  chk('賞品購入費が上限を超えると経費の欄が開く', isOpen('budget')[0]&&/当日集める額（経費）[\s\S]{0,200}要確認/.test(P()));
+  app.BG().prizeCap=cap; app.foldAll(false);
 }
 
 console.log('\n=== 検算エラーカード（デザイン案P7） ===');
@@ -733,8 +733,9 @@ app.sample(); global.flush(); app.setPhase('day'); app.go('collect');
   chk('チェック欄への転送（label）に頼らない', !/<label class="pay-c/.test(H)&&!/class="pay-ck"[^>]*onchange/.test(H));
   chk('徴収額を大きく出す', H.includes(`<span class="pay-y"><b>${app.yen(T[0].bill)}</b>`));
   const D0=(H.match(/<span class="pay-d">([\s\S]*?)<\/span>\s*(<span class="pay-d">|<\/span>)/)||['',''])[1].replace(/<[^>]+>/g,'');
-  chk('内訳を1行で出す', /^実費 [\d,]+・原資 [\d,]+・馬券 \d+口・GTO \d+口/.test(D0), D0);
-  chk('項目の途中で改行しない', /<span class="nw">馬券 \d+口<\/span>/.test(H));
+  /* V1（M1）：内訳は経費だけ（予想の口数・原資は無い） */
+  chk('内訳を1行で出す', /^経費 [\d,]+$/.test(D0), D0);
+  chk('項目の途中で改行しない', /<span class="nw">経費 [\d,]+<\/span>/.test(H));
   chk('受け取り済みの数', new RegExp('<b class="pay-n">0<span> / '+T.length+'</span></b>').test(H));
   const rest=T.reduce((a,b)=>a+b.bill,0);
   chk('残りの金額と人数', H.includes(`<b class="pay-rest">${app.yen(rest)}円</b>`)&&H.includes(`残り ${T.length}名`));
@@ -829,11 +830,11 @@ app.sample(); global.flush(); app.setPhase('prep');
   /* 段階3で起動はホーム（P1）に変えた。ホームの検査は「入口（段階3）」にある */
   chk('起動したらホーム', /let DB=blank\(\), dirty=false, TAB="home";/.test(src));
   /* 段階3：予想ゲームを使う準備中は、馬券・GTO・罰金のカード（P9） */
-  chk('数字のカード', /<small>馬券（枠連）<\/small><b>200<em>円／口<\/em><\/b>/.test(P())&&/<small>GTO（下位予想）<\/small>/.test(P())&&/<small>罰金<\/small>/.test(P()));
+  chk('数字のカード', /<small>馬券（枠連）<\/small><b>\d+<em>口<\/em><\/b>/.test(P())&&/<small>GTO（下位予想）<\/small>/.test(P())&&/<small>罰金<\/small>/.test(P()));
   chk('いまの段階のチェックリスト', /<h2>準備のチェックリスト<small>\d+ \/ \d+<\/small><\/h2>/.test(P())&&/<h2>当日の流れ<small>/.test(P()));
   chk('大会ハブでは帯の下の手順を重ねて出さない', !/class="nx-steps"/.test(P())&&/次にやること/.test(P()));
   chk('押すとその画面へ', /class="hb-li ok" onclick="goStep\('players',''\)"/.test(P()));
-  chk('使っているルールの状態', /<small>馬券（枠連）<\/small><b>[\d,]+<em>円／口<\/em><\/b>\s*<span class="ok">✓ 枠は/.test(P()));
+  chk('使っているルールの状態', /<small>馬券（枠連）<\/small><b>[\d,]+<em>口<\/em><\/b>\s*<span class="ok">✓ 枠は/.test(P()));
   app.DB().players[0].f=0; app.DB().meta.frameMode='manual'; app.render();
   chk('枠が決まっていなければ知らせる', /<span class="ng">● 枠が決まっていない方がいます<\/span>/.test(P()));
   app.sample(); global.flush(); app.setPhase('prep');
@@ -841,13 +842,13 @@ app.sample(); global.flush(); app.setPhase('prep');
   app.go('collect');
   chk('集金の画面に集金表', /id="sec-collect"/.test(P())&&/<div class="pay-cards">/.test(P()));
   app.go('money');
-  chk('賞金・収支には集金表を出さない（重複させない）', !/id="sec-collect"/.test(P())&&/<h2>収支<\/h2>/.test(P()));
+  chk('賞品・経費には集金表を出さない（重複させない）', !/id="sec-collect"/.test(P())&&/<h2>収支 <small>/.test(P()));
   console.log('  -- 順位・表彰（独立） --');
   app.go('rank');
   chk('競技結果の表', /競技結果/.test(P())&&/<th class="c" style="width:56px">順位<\/th>/.test(P()));
   const w=app.standings().net[0];
   /* 段階5で名前の横の札から「賞」の列に移した（印刷にも出す） */
-  chk('受賞した賞を賞の列に出す', new RegExp('<b>'+w.n+'</b>[\\s\\S]*?<td class="r-pzs">[^\\n]*<span class="r-pz">優勝 <b>10,000円</b></span>').test(P()), (P().match(new RegExp(w.n+'[^\\n]{0,160}'))||[''])[0]);
+  chk('受賞した賞を賞の列に出す', new RegExp('<b>'+w.n+'</b>[\\s\\S]*?<td class="r-pzs">[^\\n]*<span class="r-pz">優勝 <b>ゴルフボール 2ダース</b></span>').test(P()), (P().match(new RegExp(w.n+'[^\\n]{0,160}'))||[''])[0]);
   chk('技能賞のまとめ', /<h2>技能賞 <small>\d+ \/ \d+ 決定<\/small><\/h2>/.test(P()));
   /* 段階7で、反映済みならその場で始めるボタンにした。結果・発表の画面へのボタンも残す */
   chk('発表の画面へ行ける', /onclick="go\('result'\)">結果・発表の画面へ/.test(P())&&/onclick="startShow\(\)">▶ 発表をはじめる/.test(P()));
@@ -1029,7 +1030,7 @@ console.log('\n=== 入口（段階3：上の帯・ホーム・作成画面・大
     T('次に開くと1段目から', ()=>/STEP 1 \/ 3/.test(P()));
     X('mkStep',3); X('mkBare');
     T('ルールなしはスコアだけ残す', ()=>Object.entries(O.meta.use).every(([k,v])=>k==='score'?v===true:v===false)&&app.TAB==='hub', ()=>JSON.stringify(O.meta.use));
-    O.players.push({n:'甲　一郎',org:'',bd:'',g:0,f:0,vote:true,fee:true,feeAmt:''});
+    O.players.push({n:'甲　一郎',org:'',bd:'',g:0,f:0,vote:true,fee:true});
     app.go('make');
     T('参加者が入ったら作成画面は出さない（大会設定へ）', ()=>app.TAB==='meta');
     T('次にやることも大会設定へ', ()=>app.flowSteps()[0].at==='');
@@ -1051,24 +1052,25 @@ console.log('\n=== 入口（段階3：上の帯・ホーム・作成画面・大
   {
     app.sample(); global.flush();
     const prev=JSON.parse(JSON.stringify(app.DB()));
+    /* V1（M1）：前回のファイルに社内版の単価・賞金・原資が残っていても、取り込むのはルールと賞品と経費だけ */
     prev.meta.kPrice=300; prev.meta.nearHoles=[3,7]; prev.meta.sc.system='new'; prev.meta.use.team=true;
-    prev.meta.prizes.rank[0].amt=20000; prev.meta.budget.fee=5000; prev.meta.budget.income=[{label:'協賛',amt:10000}];
+    prev.meta.prizes.rank[0].item='優勝カップ'; prev.meta.prizes.rank[0].amt=20000; prev.meta.budget.fee=5000; prev.meta.budget.income=[{label:'協賛',amt:10000}];
     prev.courses=[{name:'前回のコース',par:prev.meta.sc.par.slice()}];
     const O=app.blank(); app.setDB(O); app.go('make');
     X('copyPrev',{_text:JSON.stringify(prev)});
     const m=app.DB().meta;
     T('大会名は回数を1つ進める', ()=>m.name==='第11回 親睦ゴルフコンペ', ()=>m.name);
     T('開催日・参加者・予想・スコアは引き継がない', ()=>m.date===''&&app.DB().players.length===0&&app.DB().keiba.length===0&&Object.keys(app.DB().scores).length===0);
-    T('ルール・競技方法・ホール・単価を引き継ぐ', ()=>m.use.team===true&&m.sc.system==='new'&&m.nearHoles.join()==='3,7'&&m.kPrice===300);
-    T('賞と原資を引き継ぐ', ()=>m.prizes.rank[0].amt===20000&&m.budget.fee===5000&&m.budget.collect[0].amt===prev.meta.budget.collect[0].amt);
+    T('ルール・競技方法・ホールを引き継ぎ、単価は持ち込まない', ()=>m.use.team===true&&m.sc.system==='new'&&m.nearHoles.join()==='3,7'&&m.kPrice===undefined);
+    T('賞品と経費を引き継ぎ、賞金の額と原資は持ち込まない', ()=>m.prizes.rank[0].item==='優勝カップ'&&!('amt' in m.prizes.rank[0])&&!('fee' in m.budget)&&m.budget.collect[0].amt===prev.meta.budget.collect[0].amt);
     T('収支の実績は引き継がない', ()=>m.budget.income.length===0);
     T('会場と登録済みのコース', ()=>m.place==='○○カントリークラブ'&&app.DB().courses.some(c=>c.name==='前回のコース'));
-    T('複製なので前回のデータとつながらない', ()=>{prev.meta.nearHoles.push(9);prev.meta.prizes.rank[0].amt=1;return m.nearHoles.join()==='3,7'&&m.prizes.rank[0].amt===20000;});
+    T('複製なので前回のデータとつながらない', ()=>{prev.meta.nearHoles.push(9);prev.meta.prizes.rank[0].item='別';return m.nearHoles.join()==='3,7'&&m.prizes.rank[0].item==='優勝カップ';});
     T('作成画面で結果を知らせる', ()=>app.TAB==='make'&&/第10回 親睦ゴルフコンペ」のルール・賞・コースを引き継ぎました。大会名は「第11回 親睦ゴルフコンペ」にしました。/.test(P()));
     const before=JSON.stringify(app.DB());
     X('copyPrev',{_text:'壊れたファイル'});
     T('読めないファイルでは何も変えない', ()=>JSON.stringify(app.DB())===before);
-    app.DB().players.push({n:'乙　二郎',org:'',bd:'',g:0,f:0,vote:true,fee:true,feeAmt:''});
+    app.DB().players.push({n:'乙　二郎',org:'',bd:'',g:0,f:0,vote:true,fee:true});
     app.DB().meta.name='秋の大会';
     X('copyPrev',{_text:JSON.stringify(prev)});
     T('参加者がいれば名前は変えず、大会設定で知らせる', ()=>app.DB().meta.name==='秋の大会'&&app.DB().players.length===1&&app.TAB==='meta');
@@ -1083,8 +1085,9 @@ console.log('\n=== 入口（段階3：上の帯・ホーム・作成画面・大
   T('使っているルールの札', ()=>/<button class="rl-c" onclick="go\('rules'\)">ニアピン ×4<\/button>/.test(P())&&/<button class="rl-c add" onclick="go\('rules'\)">＋ 足す<\/button>/.test(P()));
   T('馬券・GTOを使っているときの説明', ()=>/「予想入力」と「集計」の画面があります/.test(P()));
   T('当日の流れ（発表まで）', ()=>/<h2>当日の流れ<small>5つ<\/small><\/h2>\s*<ol><li class=""><b>1<\/b><span>集金する<\/span><\/li>/.test(P())&&/<li class=" after"><b>5<\/b><span>発表する<small>（発表）<\/small>/.test(P()));
-  T('予想が入っていれば集金は平均', ()=>/<h2>集金の平均（ひとり）<\/h2><b>[\d,]+<em>円<\/em><\/b>/.test(P()));
-  T('内訳を出す', ()=>/<span>プレー代 [\d,]+ ＋ [\s\S]*馬券（[\d.]+口） [\d,]+/.test(P()));
+  /* V1（M1）：予想に代金は無いので「平均」は無い。経費だけの見込みを出す */
+  T('集金は経費だけの見込み（19,500円）', ()=>/<h2>集金の見込み（ひとり）<\/h2><b>19,500<em>円<\/em><\/b>/.test(P()));
+  T('内訳を出す', ()=>/<span>プレー代 13,500 ＋ 懇親会費 3,000 ＋ 賞品購入費 3,000/.test(P()));
   T('チェックリストは2列', ()=>/\.hb-cl\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/.test(css));
   T('右の列は340px（P4）', ()=>/\.hb-main\{display:grid;grid-template-columns:minmax\(0,1fr\) 340px;/.test(css));
   app.useSet('budget',false); app.useSet('budget',true); app.render();
@@ -1118,7 +1121,7 @@ console.log('\n=== 入口（段階3：上の帯・ホーム・作成画面・大
   {
     const O=app.blank(); app.setDB(O); app.go('hub');
     T('参加者がいなければ枠の注意は出さない', ()=>/<span class="">枠は参加者を入れてから決めます<\/span>/.test(P()));
-    T('予想が無ければ集金は見込み', ()=>/<h2>集金の見込み（ひとり）<\/h2><b>2,700<em>円<\/em><\/b>/.test(P()));
+    T('経費が未入力なら「まだ決まっていません」', ()=>/<h2>集金の見込み（ひとり）<\/h2><span class="ng">● 当日集める額がまだ決まっていません<\/span>/.test(P()));
     T('手を付けていない技能賞に輪を付けない', ()=>/class="sd-i" onclick="go\('prize'\)"/.test(SD()));
   }
   app.sample(); global.flush(); app.setPhase('prep'); app.go('hub');
@@ -1126,7 +1129,7 @@ console.log('\n=== 入口（段階3：上の帯・ホーム・作成画面・大
 
 console.log('\n=== 準備（段階4：参加者P5・組合せP6） ===');
 /* 2026-09-17。決めたこと：
-   ・参加者の表は「基本（氏名・所属・生年月日・組）」を既定にし、枠と実力／参加とお金の列はまとまりで切り替える。列は削らない
+   ・参加者の表は「基本（氏名・所属・生年月日・組）」を既定にし、枠と実力／参加と経費の列はまとまりで切り替える。列は削らない
    ・スマホで人を組へ移すのは「押して行き先の組を選ぶ」＋「長押しで運ぶ」（以前の組ごとの選択欄は置き換える）
    ・スタート時刻は「最初の時刻＋間隔」で全組に入れられる（データは項目の追加のみ） */
 {
@@ -1141,16 +1144,16 @@ console.log('\n=== 準備（段階4：参加者P5・組合せP6） ===');
   console.log('  -- 参加者：列のまとまり --');
   app.sample(); global.flush(); app.setPhase('prep'); app.go('players');
   T('既定は基本の列', ()=>S4.PCOL==='b'&&/<div class="pwrap v-b">/.test(P()));
-  T('切替は3つ（枠を自分で決めるサンプル①）', ()=>/<button class="on" aria-pressed="true" onclick="pColSet\('b'\)">基本<\/button><button class="" aria-pressed="false" onclick="pColSet\('f'\)">枠と実力<\/button><button class="" aria-pressed="false" onclick="pColSet\('m'\)">参加とお金<\/button>/.test(P()), ()=>(P().match(/<div class="p-seg"[\s\S]*?<\/div>/)||[''])[0]);
+  T('切替は3つ（枠を自分で決めるサンプル①）', ()=>/<button class="on" aria-pressed="true" onclick="pColSet\('b'\)">基本<\/button><button class="" aria-pressed="false" onclick="pColSet\('f'\)">枠と実力<\/button><button class="" aria-pressed="false" onclick="pColSet\('m'\)">参加と経費<\/button>/.test(P()), ()=>(P().match(/<div class="p-seg"[\s\S]*?<\/div>/)||[''])[0]);
   T('基本は氏名・所属・生年月日・組', ()=>/<th style="min-width:10\.5em">氏名<\/th><th class="col cb" style="min-width:8em">所属・部署<\/th><th class="col cb" style="min-width:8\.5em">生年月日<\/th>\s*<th class="c col cb cf" style="min-width:6em">組<\/th>/.test(P()));
   T('枠と実力の列', ()=>/<th class="c col cf" style="min-width:7\.5em">枠<\/th><th class="n col cf" style="min-width:7em">実力の目安<\/th>/.test(P()));
-  T('参加とお金の列', ()=>/<th class="c col cm" style="min-width:12\.5em">参加のしかた<\/th>/.test(P())&&/<th class="c col cm" style="width:56px">原資<\/th><th class="n col cm" style="min-width:6\.5em">個別額<\/th>/.test(P()));
-  T('列は削らず全部描く（見せる列だけを選ぶ）', ()=>(P().match(/joinSet\(/g)||[]).length===16&&(P().match(/pEdit\(\d+,'feeAmt'/g)||[]).length===16&&(P().match(/pEdit\(\d+,'skill'/g)||[]).length===16);
+  T('参加と経費の列', ()=>/<th class="c col cm" style="min-width:12\.5em">参加のしかた<\/th>/.test(P())&&/<th class="c col cm" style="width:56px">経費<\/th><th class="c col cm" style="width:64px">懇親会<\/th>/.test(P()));
+  T('列は削らず全部描く（見せる列だけを選ぶ）', ()=>(P().match(/joinSet\(/g)||[]).length===16&&(P().match(/pEdit\(\d+,'fee',this\.checked\)" aria-label/g)||[]).length===16&&(P().match(/pEdit\(\d+,'skill'/g)||[]).length===16);
   T('見せる列を選ぶ指定', ()=>/\.ptab \.col\{display:none\}/.test(css)&&/\.pwrap\.v-b \.ptab \.cb,\.pwrap\.v-f \.ptab \.cf,\.pwrap\.v-m \.ptab \.cm\{display:table-cell\}/.test(css));
   T('説明もまとまりごとに出す', ()=>/<div class="msg pv pv-m">[\s\S]*参加のしかた<\/b>は3つから選びます/.test(P())&&/\.pwrap\.v-b \.pv-b,\.pwrap\.v-f \.pv-f,\.pwrap\.v-m \.pv-m\{display:block\}/.test(css));
   T('枠を割り振るボタンは枠と実力の中', ()=>/<span class="pv pv-f"><button class="btn ghost" onclick="fPair2\(\)">/.test(P()));
   X('pColSet','m');
-  T('参加とお金に切り替える', ()=>/<div class="pwrap v-m">/.test(P())&&/aria-pressed="true" onclick="pColSet\('m'\)"/.test(P()));
+  T('参加と経費に切り替える', ()=>/<div class="pwrap v-m">/.test(P())&&/aria-pressed="true" onclick="pColSet\('m'\)"/.test(P()));
   app.go('hub'); app.go('players');
   T('画面を移っても選んだまとまりを保つ（ファイルには残さない）', ()=>/<div class="pwrap v-m">/.test(P())&&!('pcol' in app.DB().meta)&&!JSON.stringify(app.DB()).includes('PCOL'));
   app.DB().meta.frameMode='group'; X('pColSet','f');
@@ -1165,7 +1168,7 @@ console.log('\n=== 準備（段階4：参加者P5・組合せP6） ===');
   app.goStep('players','@pcol-f');
   T('次にやることから枠と実力へ', ()=>app.TAB==='players'&&S4.PCOL==='f');
   app.sample(); global.flush(); X('cAdd','車代（1台あたり）','unit'); app.go('players');
-  T('車を出す方が決まっていなければ印', ()=>/参加とお金<i class="p-w">●<\/i><\/button>/.test(P()));
+  T('車を出す方が決まっていなければ印', ()=>/参加と経費<i class="p-w">●<\/i><\/button>/.test(P()));
   X('pColSet','b');
   console.log('  -- 参加者：上の操作と右の列 --');
   app.sample(); global.flush(); app.go('players');
@@ -1284,7 +1287,7 @@ console.log('\n=== 準備（段階4：参加者P5・組合せP6） ===');
   T('決めた組は動かさない', ()=>E.players.slice(0,8).map(p=>p.g).join()===keep);
   T('空いた組へ上から入る', ()=>+E.players[9].g===3&&+E.players[10].g===3&&+E.players[14].g===4, ()=>[9,10,14].map(k=>E.players[k].g).join());
   T('どの組も定員を超えない', ()=>E.groups.every(g=>app.inGroup(g.no).length<=4));
-  E.players.push({n:'追加　一郎',org:'',bd:'',g:0,f:0,vote:true,fee:true,feeAmt:''});
+  E.players.push({n:'追加　一郎',org:'',bd:'',g:0,f:0,vote:true,fee:true});
   X('gFill');
   T('空きが無ければ組を足す', ()=>E.groups.length===5&&+E.players[16].g===5);
   let msg=null; const al=global.alert; global.alert=m=>{msg=m;};
@@ -1432,7 +1435,7 @@ console.log('\n=== 当日と結果（段階5：スコア入力P7・順位・表�
   T('所属は名前の下', ()=>new RegExp('<td class="r-nm"><b>'+w.n+'</b><small>'+w.p.org+'</small></td>').test(P()));
   T('上位3名を大きく（1位は色を付ける）', ()=>/<tr class="zebra r-top r-1"><td class="c r-rk">1<\/td>/.test(P())&&/<tr class="zebra r-top r-3"><td class="c r-rk">3<\/td>/.test(P())&&/<tr class="zebra"><td class="c r-rk">4<\/td>/.test(P()));
   T('賞の列（ベスグロは設定の賞として1つだけ）', ()=>{const r=P().split('<td class="c r-rk">1</td>')[1].split('</tr>')[0];
-    return /<span class="r-pz">優勝 <b>10,000円<\/b><\/span>/.test(r)&&(r.match(/ベスグロ/g)||[]).length===(st.best.n===w.n?1:0);});
+    return /<span class="r-pz">優勝 <b>ゴルフボール 2ダース<\/b><\/span>/.test(r)&&(r.match(/ベスグロ/g)||[]).length===(st.best.n===w.n?1:0);});
   T('賞の列は印刷にも出す', ()=>/<th style="min-width:9em">賞<\/th>/.test(P())&&/<td class="r-pzs">/.test(P())&&/@media print\{\.r-grid,\.s-grid\{display:block\}\.r-pz\{color:#000\}/.test(css));
   /* 2026-09-20：順位表（r-main）が見出しの下に収まりきらず、丸ごと2枚目へ送られて1枚目が空白になっていた
      （集金表と同じ原因）。集金表（#sec-collect）と同様に、このカードだけページをまたいでよいことにした */
@@ -1455,12 +1458,9 @@ console.log('\n=== 当日と結果（段階5：スコア入力P7・順位・表�
     X('buildSlides'); const keep=app.slides; app.render();
     T('要約を作ったあとも slides は同じもの', ()=>app.slides===keep);
   }
-  const PT=X('prizeTotal')||{all:0};
-  T('賞金合計', ()=>new RegExp('<h2>賞金合計</h2><b>'+app.yen(PT.all)+'<em>円</em></b>').test(P()));
-  T('原資と残り', ()=>new RegExp('原資 '+app.yen(X('feeTotal'))+'円（'+X('feeMembers').length+'名）・ 残 '+app.yen(X('feeTotal')-PT.all)+'円').test(P()));
-  const fee=app.BG().fee; app.BG().fee=100; app.render();
-  T('原資が足りなければ赤く', ()=>/<span class="ng">原資 [\d,]+円（\d+名）・ 残 -[\d,]+円<\/span>/.test(P()));
-  app.BG().fee=fee;
+  /* V1（M1）：賞金合計・原資の残りは無い。賞品の一覧（品名）を出す */
+  T('賞品のカード（賞の数と品名）', ()=>new RegExp('<h2>賞品 <small>品物で表彰します</small></h2><b>'+app.prizeRows().length+'<em>賞</em></b>').test(P())&&/優勝（ゴルフボール 2ダース）/.test(P()));
+  T('賞品のカードに金額が出ない', ()=>!/class="card r-sum">[\s\S]{0,400}円/.test(P().split('class="card r-sum"')[1]?'class="card r-sum">'+P().split('class="card r-sum"')[1].split('</div>')[0]:''));
   T('反映ボタンは順位表の下', ()=>/<div class="card r-main">[\s\S]*onclick="applyScores\(\)">この結果を馬券・GTO・罰金へ反映/.test(P()));
   T('右の列は300px。1列に畳むときもはみ出さない', ()=>/\.r-grid\{display:grid;grid-template-columns:minmax\(0,1fr\) 300px;/.test(css)&&/\.r-grid\{grid-template-columns:minmax\(0,1fr\)\}/.test(css));
   T('印刷は1列で右の列は出さない', ()=>/@media print\{\.r-grid,\.s-grid\{display:block\}/.test(css)&&/<div class="r-side no-print">/.test(P()));
@@ -1509,24 +1509,17 @@ console.log('\n=== 追加ルール（2026-09-20：大波・小波・おしどり
   });
   T('対象ホールを決め打ちしない（ニアピン・ドラコンと違い holeWant 等の指定が無くても出る）', ()=>app.birdieRows().length>0);
 
-  console.log('  -- イーグル・バーディー賞（お金の集計） --');
-  T('単価×件数が合計に入る（イーグル3件・バーディー24件）', ()=>{
-    const pt=app.prizeTotal();
-    return pt.birdie===3*(+app.PZ().eagle||0)+24*(+app.PZ().birdie||0)&&pt.all>=pt.birdie;
-  });
-  T('トグルを切ると賞金合計から外れる', ()=>{
-    const on=app.prizeTotal().all; app.useSet('birdie',false); const off=app.prizeTotal().all; app.useSet('birdie',true);
-    return on>off&&off===on-app.prizeTotal().birdie;
-  });
-  T('該当者の受賞額にも入る（イーグルを打った青木健一）', ()=>{
-    app.useSet('birdie',true); const on=app.prizeOf('青木　健一'); app.useSet('birdie',false);
-    const off=app.prizeOf('青木　健一'); app.useSet('birdie',true); return on>off;
+  console.log('  -- イーグル・バーディー賞（賞品。V1・M1） --');
+  T('イーグル・バーディーの賞品は品名と出どころで持つ（金額を持たない）', ()=>typeof app.giftOf('eagle')==='object'&&typeof app.giftOf('birdie')==='object'&&typeof app.PZ().eagle!=='number');
+  T('該当者の賞に入る（イーグルを打った青木健一）', ()=>{
+    app.useSet('birdie',true); const on=app.giftsOf('青木　健一').filter(([l])=>/イーグル|バーディー/.test(l)).length; app.useSet('birdie',false);
+    const off=app.giftsOf('青木　健一').filter(([l])=>/イーグル|バーディー/.test(l)).length; app.useSet('birdie',true); return on>off&&off===0;
   });
 
   console.log('  -- よくある賞プリセット（pzPreset） --');
   {
     const rank=app.PZ().rank; rank.length=0;
-    rank.push({label:"優勝",kind:"rank",n:1,amt:10000});
+    rank.push({label:"優勝",kind:"rank",n:1,item:"",src:"host"});
     app.pzPreset();
     T('1回目は5件（猛打賞・ブービー賞・ブービーメーカー賞・ベストドレッサー賞・珍プレー賞）が増える',
       ()=>rank.length===6&&['猛打賞','ブービー賞','ブービーメーカー賞','ベストドレッサー賞','珍プレー賞'].every(l=>rank.some(r=>r.label===l)));
@@ -1551,9 +1544,8 @@ console.log('\n=== 追加ルール（2026-09-20：大波・小波・おしどり
   app.useSet('birdie',true); app.go('money');
   T('順位賞カードに「よくある賞をまとめて追加」ボタンがある', ()=>/<button class="btn ghost" onclick="pzPreset\(\)">よくある賞をまとめて追加<\/button>/.test(P()));
   T('大波・小波・おしどり・早出が「決め方」の選択肢に増えている', ()=>/大波（前後半の差が最大）/.test(P())&&/小波（前後半の差が最小）/.test(P())&&/おしどり（前後半が同スコア）/.test(P())&&/早出（組のスタートが最速）/.test(P()));
-  T('バーディー・イーグル賞カードが単価入力つきで出る', ()=>/<h2>バーディー・イーグル賞 <small>18ホールの内訳から自動判定・対象ホールの指定は不要<\/small><\/h2>/.test(P())
-    &&/onchange="PZ\(\)\.eagle=\+this\.value\|\|0;touch\(\);render\(\)"/.test(P())
-    &&/onchange="PZ\(\)\.birdie=\+this\.value\|\|0;touch\(\);render\(\)"/.test(P()));
+  T('バーディー・イーグル賞カードが賞品の入力つきで出る', ()=>/<h2>バーディー・イーグル賞 <small>18ホールの内訳から自動判定・対象ホールの指定は不要<\/small><\/h2>/.test(P())
+    &&/giftSet\('eagle',k,v\)/.test(P())&&/giftSet\('birdie',k,v\)/.test(P())&&!/PZ\(\)\.eagle=/.test(P()));
   T('イーグル3件・バーディー24件の内訳を出す', ()=>{
     const card=P().split('バーディー・イーグル賞')[1]||'';
     return /<td class="c">3<\/td>/.test(card)&&/<td class="c">24<\/td>/.test(card);
@@ -1562,15 +1554,15 @@ console.log('\n=== 追加ルール（2026-09-20：大波・小波・おしどり
   T('使わない設定にすればカードごと消える', ()=>!/バーディー・イーグル賞/.test(P()));
   app.useSet('birdie',true);
 
-  console.log('  -- 画面：賞金の原資（prizeSourceCard・大会設定の中） --');
+  console.log('  -- 画面：賞金の原資のカードは無い（V1・M1） --');
   app.go('meta');
-  T('原資の内訳に「バーディー・イーグル」の行が出る', ()=>/バーディー・イーグル[\s\S]{0,80}イーグル [\d,]+　\/　バーディー [\d,]+/.test(P()));
+  T('大会設定に「賞金の原資」のカードが無い', ()=>!/賞金の原資/.test(P()));
 
   console.log('  -- 画面：順位・表彰（r-bd カード） --');
   app.go('rank');
   T('イーグル・バーディーの一覧カードが出る（27件）', ()=>/<div class="card r-bd"><h2>イーグル・バーディー <small>27件<\/small><\/h2>/.test(P()));
   T('1件ごとに「◯番 ラベル」と受賞者名', ()=>/<li><span>4番 イーグル<\/span><b>青木　健一<\/b><\/li>/.test(P())&&/<li><span>2番 バーディー<\/span><b>上田　直樹<\/b><\/li>/.test(P()));
-  T('賞金合計の内訳に「バーディー・イーグル」を添える', ()=>/順位賞 [\d,]+ ・ 技能賞 [\d,]+ ・ バーディー・イーグル [\d,]+/.test(P()));
+  T('賞品のカードに金額の内訳が無い', ()=>!/順位賞 [\d,]+ ・ 技能賞/.test(P()));
   app.useSet('birdie',false);
   T('使わなければ一覧カードも出さない', ()=>!/class="card r-bd"/.test(P()));
   app.useSet('birdie',true);
@@ -1603,7 +1595,7 @@ console.log('\n=== 予想入力（段階6：P10） ===');
   T('締め切っていれば「予想を入力する」は済み', ()=>step().done===true);
   D.meta.betsClosed=false;
   T('締め切る前は済まない（口数を出す）', ()=>step().done===false&&step().rest==='締め切り前（150口）', ()=>step().rest);
-  T('説明に締め切りのこと', ()=>/入れ終わったら「締め切る」を押します（代金は締め切ってから集めます）/.test(step().desc));
+  T('説明に締め切りのこと（代金の話は無い）', ()=>/入れ終わったら「締め切る」を押します/.test(step().desc)&&!/代金/.test(step().desc));
 
   console.log('  -- 馬券とGTOを画面の中で切り替える --');
   app.go('bets');
@@ -1692,7 +1684,7 @@ console.log('\n=== 予想入力（段階6：P10） ===');
   X('gPick',R[2]); X('bClear');
   T('選び直す', ()=>S6.GSEL.length===0);
   T('得票の多い方（★は罰金の基準）', ()=>/<h2>得票の多い方 <small>有効な口だけ<\/small><\/h2>\s*<ol class="b-votes"><li><span>★ /.test(P())&&(P().match(/<li><span>★ /g)||[]).length===D.meta.fineTop);
-  T('GTOの売上と方式', ()=>new RegExp('<h2>GTO 売上</h2><b>[\\d,]+<em>円</em></b><span>\\d+口 × 500円・'+D.meta.gMode).test(P()));
+  T('GTOの総口数と方式（売上は無い）', ()=>new RegExp('<h2>GTO 総口数</h2><b>\\d+<em>口</em></b><span>'+D.meta.gMode).test(P())&&!/GTO 売上/.test(P()));
   const gv=D.gto[0].p[0]; const gp=D.players.find(p=>p.n===gv); const gg=gp.g, gf=gp.f; gp.g=0; gp.f=0; app.render();
   T('無効の口があれば切替に印', ()=>/GTO（下位予想）<small>\d+口<\/small><i class="b-bad">無効\d+<\/i><\/button>/.test(P()));
   gp.g=gg; gp.f=gf; app.render();
@@ -1731,7 +1723,8 @@ console.log('\n=== 予想入力（段階6：P10） ===');
 
   console.log('  -- 集金・集計 --');
   app.setPhase('day'); app.go('collect');
-  T('締め切る前の集金では知らせる', ()=>/予想がまだ締め切られていません。[\s\S]*onclick="go\('bets'\)">予想入力へ<\/button>/.test(P()));
+  /* V1（M1）：支払額は予想で変わらないので、集金は予想の締め切りを待たない */
+  T('締め切る前でも集金に予想の知らせは出ない', ()=>!/予想がまだ締め切られていません/.test(P()));
   D.meta.betsClosed=true; app.render();
   T('締め切っていれば知らせない', ()=>!/予想がまだ締め切られていません/.test(P()));
   app.setPhase('award'); app.go('sum');
@@ -1769,11 +1762,12 @@ console.log('\n=== 発表（段階7：発表スクリーンP11・操作パネル
   const h3=sl('s-3').html(), r3=st.net[2];
   T('左に見出しと大きな順位', ()=>/<div class="ws">\s*<div class="ws-l"><div class="kicker">第 3 位<\/div>\s*<div class="ws-big">3<small>位<\/small><\/div>/.test(h3));
   T('右に所属・名前・成績（伏せておく）', ()=>new RegExp('<div class="veil hidden" id="veil"><div class="ws-org">'+r3.p.org+'</div><div class="name-xl">'+r3.n+'</div>\\s*<div class="ws-stats"><div class="hi"><i>ネット</i><b>'+r3.net+'</b></div><div class=""><i>グロス</i><b>'+r3.g+'</b></div>').test(h3));
-  T('賞金は伏せずに見せる', ()=>/<\/div>\s*<div class="ws-prize">3位賞<b>3,000円<\/b><\/div>/.test(h3));
-  T('優勝の見出し', ()=>/<div class="kicker">優　勝<\/div>\s*<div class="ws-big">1<small>位<\/small>/.test(sl('s-1').html())&&/<div class="ws-prize">優勝賞<b>10,000円<\/b>/.test(sl('s-1').html()));
+  /* V1（M1）：賞は品物。金額ではなく品名を出す */
+  T('賞品は伏せずに見せる', ()=>/<\/div>\s*<div class="ws-prize">3位賞<b>ゴルフボール 半ダース<\/b><\/div>/.test(h3));
+  T('優勝の見出し', ()=>/<div class="kicker">優　勝<\/div>\s*<div class="ws-big">1<small>位<\/small>/.test(sl('s-1').html())&&/<div class="ws-prize">優勝賞<b>ゴルフボール 2ダース<\/b>/.test(sl('s-1').html()));
   T('ベスグロは打数を大きく', ()=>new RegExp('<div class="ws-big">'+st.best.g+'<small>打</small></div>').test(sl('s-best').html()));
   const nh=D.near.find(x=>x.who).hole;
-  T('技能賞はホール番号を大きく、記録と賞金', ()=>new RegExp('<div class="ws-big">'+nh+'<small>番</small></div>').test(sl('near'+nh).html())&&/<i>記録<\/i>/.test(sl('near'+nh).html())&&/<div class="ws-prize">ニアピン賞<b>1,000円<\/b>/.test(sl('near'+nh).html()));
+  T('技能賞はホール番号を大きく、記録と賞品', ()=>new RegExp('<div class="ws-big">'+nh+'<small>番</small></div>').test(sl('near'+nh).html())&&/<i>記録<\/i>/.test(sl('near'+nh).html())&&/<div class="ws-prize">ニアピン賞<b>ボール 3個<\/b>/.test(sl('near'+nh).html()));
   T('賞の画面は賞の名前を大きく', ()=>/<div class="ws-big txt">BB<\/div>/.test(sl('s-pz2').html())&&/ネットの下から 2 番目/.test(sl('s-pz2').html()));
   T('GTOの結果も同じ形（打数の多い方から）', ()=>/<div class="ws-big">2<small>位<\/small><\/div>\s*<div class="ws-tie">打数の多い方から<\/div>/.test(sl('g2').html()));
   T('伏せている間は所属と成績もぼかす', ()=>/\.veil\.hidden \.ws-org,\.veil\.hidden \.ws-stats\{filter:blur\(18px\);opacity:\.25\}/.test(css));
@@ -1804,7 +1798,7 @@ console.log('\n=== 発表（段階7：発表スクリーンP11・操作パネル
   X('setIdx',0); X('draw');
   T('最初の画面では前の発表を出さない', ()=>SH().includes('<span class="sf-prev"></span>'));
   X('setIdx',S.findIndex(x=>x.id==='k-pay')+1); X('draw');
-  T('名前を伏せない画面の後は見出しだけ', ()=>SH().includes('<span class="sf-prev">← 馬券 払戻</span>'));
+  T('名前を伏せない画面の後は見出しだけ', ()=>SH().includes('<span class="sf-prev">← 馬券 的中</span>'));
   X('setIdx',S.length-1); X('draw');
   T('最後の画面', ()=>SH().includes('<span class="sf-next">最後の画面です</span>'));
   T('操作の帯と重ならない（パネルが無いときは上へずらす）', ()=>/#show:not\(\.paneled\) \.sf-bot\{bottom:calc\(64px \+ env\(safe-area-inset-bottom\)\)\}/.test(css));
@@ -2134,18 +2128,18 @@ console.log('\n=== 仕上げ（段階9：使い方・印刷・参加者カード
   T('画面の名前は実際の名前（組み合わせ・順位・表彰など）', ()=>/<b>組み合わせ<\/b>/.test(H)&&/<b>順位・表彰<\/b>/.test(H)&&/<b>結果共有・出力<\/b>/.test(H)&&/<b>大会を選ぶ<\/b>/.test(H));
   T('前回からのコピーと作成画面の説明', ()=>/「前回の大会から設定をコピー」（ルール・賞・コースだけ引き継ぎ、第◯回を1つ進めます）/.test(H)&&/作成画面で基本 → 競技方法 → 追加ルールの順/.test(H));
   T('コースの収録数はマスタから数える', ()=>{const [f,c]=X('mstCount')||[0,0];return f===2254&&c===5122&&/全国47都道府県の<b>2,254施設・5,122コース<\/b>/.test(H)&&!/379施設/.test(H);});
-  T('罰金の手動指定は「結果・発表」にある', ()=>/得票数が並んだときは、「結果・発表」の「手動指定」で決めてください/.test(H)&&!/賞金・収支タブの「手動指定」/.test(H));
-  T('「会費」は「賞金の原資」と書く', ()=>/<b>賞金の原資<\/b>/.test(H)&&!/<b>会費<\/b>/.test(H)&&/対象は 16名/.test(H));
+  T('罰金の手動指定は「結果・発表」にある', ()=>/得票数が並んだときは、「結果・発表」の「手動指定」で決めてください/.test(H)&&!/賞品・経費タブの「手動指定」/.test(H));
+  T('お金は「経費」とだけ書く（原資・会費と書かない）', ()=>/<b>経費<\/b>/.test(H)&&!/<b>会費<\/b>/.test(H)&&!/賞金の原資/.test(H)&&/プレーの経費は 16名/.test(H));
   T('貼り付けの場所を書く', ()=>/「参加者」の「貼り付けて取り込む」に貼ります/.test(H)&&/「紙の予想を貼り付け」から/.test(H)&&/「スコア入力」の右の「集計表を貼り付けて全員分を取り込む」/.test(H));
   T('スマホで使うとき（参加者・組み合わせ・集金・スコア・順位）', ()=>{const c=H.split('<h2>スマホで使うとき')[1].split('</div>')[0];
-    return /1人1枚のカードです。押すと、組・枠・参加のしかた・原資などの欄が開きます/.test(c)&&/長押しして運ぶ/.test(c)&&/受け取り済みになります/.test(c)&&/画面の数字キーで入れます/.test(c)&&/ネット順とグロス順/.test(c);});
+    return /1人1枚のカードです。押すと、組・枠・参加のしかた・経費などの欄が開きます/.test(c)&&/長押しして運ぶ/.test(c)&&/受け取り済みになります/.test(c)&&/画面の数字キーで入れます/.test(c)&&/ネット順とグロス順/.test(c);});
   T('発表の操作に操作パネルとスクリーンの表示', ()=>/<b>操作パネル<\/b>/.test(H)&&/<b>先にパネルを開いてから<\/b>/.test(H)&&/<b>スクリーンの表示<\/b>/.test(H)&&/受賞者名は出しません/.test(H)&&/「順位・表彰」の「発表をはじめる」、または「結果・発表」の「発表をはじめる」/.test(H));
   T('困ったとき：画面が見当たらない・予想が入れられない・操作パネルが開かない', ()=>/<b>画面が見当たらない<\/b>/.test(H)&&/<b>予想が入れられない<\/b>/.test(H)&&/<b>操作パネルが開かない<\/b>/.test(H));
   T('来年はコピーで引き継ぐと書く', ()=>/ホームの「前回の大会から設定をコピー」で、ルール・賞・コースを引き継げます/.test(H));
   T('やることの案内の見出しは「次にやること」と書かない（使い方には案内の帯を出さない決まり）', ()=>!/次にやること/.test(H)&&!/class="nx no-print/.test(H));
   app.DB().meta.use={score:true,near:false,nearAny:false,drako:false,keiba:false,gto:false,fine:false,prize:false,budget:false,team:false,lucky:false};
   app.go('help');
-  T('使わない機能は流れにも困りごとにも出さない', ()=>!/予想入力/.test(P())&&!/予想が入れられない/.test(P())&&!/配当が/.test(P())&&!/<b>集金<\/b>/.test(P())&&!/<b>賞金・収支<\/b>/.test(P()));
+  T('使わない機能は流れにも困りごとにも出さない', ()=>!/予想入力/.test(P())&&!/予想が入れられない/.test(P())&&!/配当が/.test(P())&&!/<b>集金<\/b>/.test(P())&&!/<b>賞品・経費<\/b>/.test(P()));
   T('使わない機能を外しても番号は続く', ()=>{const n=[...P().matchAll(/<b style="color:var\(--brass\)">(\d+)<\/b>/g)].map(m=>+m[1]);return n.every((x,i)=>x===i+1);});
   app.DB().meta.use.score=false; app.go('help');
   T('スコアを使わなければスコアの説明も出さない', ()=>!/<b>スコア入力<\/b>/.test(P())&&!/集計表の取り込み/.test(P())&&!/<b>順位・表彰<\/b>/.test(P()));
@@ -2171,7 +2165,7 @@ console.log('\n=== 仕上げ（段階9：使い方・印刷・参加者カード
   const c2=()=>P().split('<div class="pc open">')[1]||'';
   T('押すと開く', ()=>S9.PEXP===2&&/aria-expanded="true"/.test(P())&&(P().match(/<div class="pc open">/g)||[]).length===1);
   T('開いたカードに氏名・所属・生年月日・組', ()=>/oninput="pEdit\(2,'n',this\.value\)"/.test(c2())&&/oninput="pEdit\(2,'org',this\.value\)"/.test(c2())&&/onchange="pEdit\(2,'bd',parseDate\(this\.value\)\|\|this\.value\)"/.test(c2())&&/onchange="pEdit\(2,'g',this\.value\)"/.test(c2()));
-  T('枠・実力・参加のしかた・原資・個別額', ()=>/onchange="pEdit\(2,'f',this\.value\)"/.test(c2())&&/onchange="pEdit\(2,'skill',this\.value\)"/.test(c2())&&/onchange="joinSet\(2,this\.value\)"/.test(c2())&&/onchange="pEdit\(2,'fee',this\.checked\)"> 賞金の原資の対象/.test(c2())&&/onchange="pEdit\(2,'feeAmt',this\.value\)"/.test(c2()));
+  T('枠・実力・参加のしかた・経費（原資・個別額は無い）', ()=>/onchange="pEdit\(2,'f',this\.value\)"/.test(c2())&&/onchange="pEdit\(2,'skill',this\.value\)"/.test(c2())&&/onchange="joinSet\(2,this\.value\)"/.test(c2())&&/onchange="pEdit\(2,'fee',this\.checked\)"> プレーの経費を払う/.test(c2())&&!/feeAmt/.test(c2()));
   T('上へ・下へ・削除', ()=>/onclick="pMove\(2,-1\)">▲ 上へ/.test(c2())&&/onclick="pMove\(2,1\)">▼ 下へ/.test(c2())&&/onclick="pDel\(2\)">削除/.test(c2()));
   X('pExp',2);
   T('もう一度押すと閉じる', ()=>S9.PEXP===-1&&!/<div class="pc open">/.test(P()));
@@ -2321,11 +2315,15 @@ console.log('\n=== 集金のあとの差額（2026-09-18、v55：受け取った
 
   app.sample(); global.flush(); app.setPhase('day');
   const D=app.DB();
-  app.BG().collect.push({label:'ガソリン代',amt:37000,mode:'total'}); app.BG().roundUnit=500;
+  /* V1（2026-09-28、M1）：支払額は参加のしかたが同じなら全員同じ（予想の口数で人ごとに違わない）。
+     頭割りが変わると、プレーする15名全員の額が同時に動く。ガソリン代は 40,000円 にして、
+     16名なら1人 2,500円（19,500＋2,500＝22,000円ちょうど）、15名なら 2,667円（→ 22,500円）と、
+     500円単位の切り上げをまたぐようにしてある（またがないと差額が出ず、検査にならない） */
+  app.BG().collect.push({label:'ガソリン代',amt:40000,mode:'total',to:'play'}); app.BG().roundUnit=500;
   const S0=ST(); const bill0={}; S0.forEach(x=>bill0[x.n]=x.bill);
   console.log('  -- 入れ物 --');
   app.payToggle(S0[0].n,true);
-  T('受け取ると額と内訳が残る', ()=>{const r=D.paid[S0[0].n];return r&&typeof r==='object'&&r.y===S0[0].bill&&r.play===S0[0].play&&r.fee===S0[0].fee&&r.kq===S0[0].kq&&r.gq===S0[0].gq&&r.mem===15+1;},
+  T('受け取ると額と内訳が残る（経費だけ。予想の口数は残さない）', ()=>{const r=D.paid[S0[0].n];return r&&typeof r==='object'&&r.y===S0[0].bill&&r.play===S0[0].play&&!('fee' in r)&&!('kq' in r)&&!('gq' in r)&&r.mem===15+1;},
     ()=>JSON.stringify(D.paid[S0[0].n]));
   app.payToggle(S0[0].n,false);
   T('外すと記録ごと消える', ()=>!(S0[0].n in D.paid));
@@ -2340,53 +2338,55 @@ console.log('\n=== 集金のあとの差額（2026-09-18、v55：受け取った
   const i5=5, who=D.players[i5].n, g5=D.players[i5].g, f5=D.players[i5].f;
   app.pEdit(i5,'g',0);
   const dif=()=>ST().filter(x=>x.got&&x.diff);
-  T('受け取ったあとで金額が変わると済みでなくなる', ()=>step().done===false&&dif().length===4, ()=>dif().length+'名');
+  T('受け取ったあとで金額が変わると済みでなくなる（欠席者＋頭割りの15名）', ()=>step().done===false&&dif().length===16, ()=>dif().length+'名');
   T('欠席者はお返し（受け取った額 − いまの額）', ()=>by(who).diff===by(who).bill-bill0[who]&&by(who).diff<0, ()=>by(who).diff);
   const others=()=>dif().filter(x=>x.n!==who);
-  T('頭割りが変わった方は追加でいただく', ()=>others().length===3&&others().every(x=>x.diff===500));
-  T('理由：プレーしないため', ()=>X('payWhy',by(who))==='プレーしないため、実費と賞金の原資がなくなりました', ()=>X('payWhy',by(who)));
-  T('理由：頭割りの人数', ()=>others().length===3&&others().every(x=>X('payWhy',x)==='実費 +154円（頭割りの人数 16→15名）'), ()=>X('payWhy',others()[0]));
-  T('大会ハブに差額の人数', ()=>step().rest==='差額4名', ()=>step().rest);
-  T('大会ハブに名前と金額', ()=>step().desc.includes(who+'（お返し '+app.yen(-by(who).diff)+'円）')&&/（追加で 500円）/.test(step().desc), ()=>step().desc.slice(0,60));
-  T('一覧の数も差額を数える', ()=>X('sideCount0','collect')==='12/16', ()=>X('sideCount0','collect'));
+  T('頭割りが変わった方は追加でいただく', ()=>others().length===15&&others().every(x=>x.diff===500));
+  T('理由：プレーしないため（懇親会費は残る）', ()=>X('payWhy',by(who))==='プレーしないため、プレーの経費がなくなりました（残る経費 3,000円）', ()=>X('payWhy',by(who)));
+  T('理由：頭割りの人数', ()=>others().length===15&&others().every(x=>X('payWhy',x)==='経費 +167円（頭割りの人数 16→15名）'), ()=>X('payWhy',others()[0]));
+  T('大会ハブに差額の人数', ()=>step().rest==='差額16名', ()=>step().rest);
+  T('大会ハブに名前と金額', ()=>/（追加で 500円）/.test(step().desc)&&/ほか13名/.test(step().desc), ()=>step().desc.slice(0,60));
+  T('一覧の数も差額を数える', ()=>X('sideCount0','collect')==='0/16', ()=>X('sideCount0','collect'));
 
   console.log('  -- 集金の画面（PC） --');
   app.go('collect');
   const H=P();
-  T('差額の知らせ（人数）', ()=>/<div class="msg warn pay-dif no-print" id="pay-dif"><b>受け取ったあとで金額が変わった方が 4名 います。<\/b>/.test(H));
+  T('差額の知らせ（人数）', ()=>/<div class="msg warn pay-dif no-print" id="pay-dif"><b>受け取ったあとで金額が変わった方が 16名 います。<\/b>/.test(H));
   T('差額の知らせ（名前・金額・理由）', ()=>new RegExp('<li><b>'+who+'</b>　<span class="pay-dv out">お返し [\\d,]+円</span>\\s*<small>（プレーしないため').test(H));
   T('表に「受け取った額」「差額」の列', ()=>/<th class="n pay-dh"[^>]*>受け取った額<\/th><th class="c pay-dh"[^>]*>差額<\/th>/.test(H));
   const row=n=>{const t=H.slice(H.indexOf('<table class="hscroll pay-table">'));const i=t.indexOf('<td>'+n);return t.slice(t.lastIndexOf('<tr',i),t.indexOf('</tr>',i));};
   T('差額の行は△にし、チェックを外す操作にしない', ()=>/<span class="pay-dmk"[^>]*>△<\/span>/.test(row(who))&&!/type="checkbox"/.test(row(who)));
   T('差額のボタンで精算する', ()=>new RegExp('onclick="paySettle\\(\''+who+'\'\\)">−[\\d,]+<span class="pay-da"> お返しした</span></button>').test(row(who))&&/">\+500<span class="pay-da"> 受け取った<\/span><\/button>/.test(H));
   T('ボタンに理由を添える（title）', ()=>/<button type="button" class="pay-dbt out" title="プレーしないため/.test(row(who)));
-  T('見出しの段が列の数とそろう', ()=>{const th=H.slice(H.indexOf('<table class="hscroll pay-table"><thead>'),H.indexOf('</thead>',H.indexOf('<table class="hscroll pay-table">')));
-    const trs=th.split('</tr>'); const top=(trs[0].match(/<th(?:\s[^>]*)?>/g)||[]).reduce((a,t)=>a+(+(/colspan="(\d+)"/.exec(t)||[,1])[1]),0);
-    const low=(trs[1].match(/<th(?:\s[^>]*)?>/g)||[]).length; return top===low&&low>10;}, 'thead');
-  T('合計の行の済み数は差額を除く', ()=>/<tr><td class="c">12\/16<\/td><td><b>合計<\/b><\/td>/.test(H));
-  T('差額が無い行は従来どおり', ()=>new RegExp('<input type="checkbox" checked\\s*onchange="payToggle\\(\''+S0[0].n+'\',this.checked\\)">').test(H));
+  /* V1（M1）：v68 の「一律・個別・精算」の区分けの段は無くなった（予想・賞金・罰金の列が無い）。見出しは1段 */
+  T('見出しは1段で、列の数と本文がそろう', ()=>{const th=H.slice(H.indexOf('<table class="hscroll pay-table"><thead>'),H.indexOf('</thead>',H.indexOf('<table class="hscroll pay-table">')));
+    const trs=th.split('</tr>').filter(x=>/<th/.test(x)); const n=(trs[0].match(/<th(?:\s[^>]*)?>/g)||[]).length;
+    const body=row(who); const m=(body.match(/<td/g)||[]).length; return trs.length===1&&!/colspan/.test(th)&&n===m&&n>=5;}, 'thead');
+  T('合計の行の済み数は差額を除く', ()=>/<tr><td class="c">0\/16<\/td><td><b>合計<\/b><\/td>/.test(H));
+  /* V1（M1）：この場面では全員の額が動くので、チェック欄のままの行は無い（差額の無い行の見た目は fee.js・「入れ物」で確かめている） */
+  T('全員に差額があるので、チェック欄のままの行は無い', ()=>!/<input type="checkbox" checked\s*onchange="payToggle/.test(H));
 
   console.log('  -- スマホのカード --');
   const C=H.slice(H.indexOf('<div class="pay-cards">'),H.indexOf('<table class="hscroll pay-table">'));
-  T('差額のカードは3つめの見た目（途中の状態）', ()=>new RegExp('<button type="button" class="pay-c got dif out" role="checkbox" aria-checked="mixed"\\s*onclick="paySettle\\(\''+who+'\'\\)">').test(C)&&(C.match(/class="pay-c got dif in"/g)||[]).length===3);
+  T('差額のカードは3つめの見た目（途中の状態）', ()=>new RegExp('<button type="button" class="pay-c got dif out" role="checkbox" aria-checked="mixed"\\s*onclick="paySettle\\(\''+who+'\'\\)">').test(C)&&(C.match(/class="pay-c got dif in"/g)||[]).length===15);
   T('受け取った額といまの額を並べる', ()=>new RegExp('受け取り済 '+app.yen(bill0[who])+'円</span> → <span class="nw">いま '+app.yen(by(who).bill)+'円').test(C));
   T('何をすれば済むかを書く', ()=>/<span class="pay-dt">お返ししたら押す<\/span>/.test(C)&&/<span class="pay-dt">受け取ったら押す<\/span>/.test(C));
-  T('下の帯に差額の人数', ()=>/<b class="pay-rest">差額 4名<\/b>\s*<small>押して精算<\/small>/.test(C)&&/<b class="pay-n">12<span> \/ 16<\/span><\/b>/.test(C));
+  T('下の帯に差額の人数', ()=>/<b class="pay-rest">差額 16名<\/b>\s*<small>押して精算<\/small>/.test(C)&&/<b class="pay-n">0<span> \/ 16<\/span><\/b>/.test(C));
   app.payOnly(true);
   T('「未集金だけ」にも差額の方を残す', ()=>{const c=P();const cc=c.slice(c.indexOf('<div class="pay-cards">'),c.indexOf('<table class="hscroll pay-table">'));
-    return (cc.match(/<button type="button" class="pay-c/g)||[]).length===4;});
+    return (cc.match(/<button type="button" class="pay-c/g)||[]).length===16;});
   app.payOnly(false);
 
   console.log('  -- 追加の分を繰越金で埋める --');
-  T('ボタンは追加の分だけを数える', ()=>/onclick="payCover\(\)">追加でいただく 3名・1,500円を繰越金で埋める<\/button>/.test(H));
+  T('ボタンは追加の分だけを数える', ()=>/onclick="payCover\(\)">追加でいただく 15名・7,500円を繰越金で埋める<\/button>/.test(H));
   T('お返しは埋めないと書く', ()=>new RegExp('お返しする 1名・'+app.yen(-by(who).diff)+'円は本人のお金なので、繰越金には回しません').test(H));
   const bd0=X('budget');
   X('payCover');
-  T('埋めると3名の差額が消える', ()=>others().length===0&&ST().filter(x=>x.cover===500).length===3);
+  T('埋めると15名の差額が消える', ()=>others().length===0&&ST().filter(x=>x.cover===500).length===15);
   T('欠席者のお返しは残る', ()=>by(who).diff<0&&step().done===false&&step().rest==='差額1名', ()=>step().rest);
   const bd1=X('budget');
-  T('収支の支出に「差額の穴埋め（繰越金から）」', ()=>bd1.exp.some(x=>x.l==='差額の穴埋め（繰越金から）'&&x.v===1500));
-  T('収支の差し引きがその分だけ減る', ()=>bd0.diff-bd1.diff===1500, ()=>bd0.diff-bd1.diff);
+  T('収支の支出に「差額の穴埋め（繰越金から）」', ()=>bd1.exp.some(x=>x.l==='差額の穴埋め（繰越金から）'&&x.v===7500));
+  T('収支の差し引きがその分だけ減る', ()=>bd0.diff-bd1.diff===7500, ()=>bd0.diff-bd1.diff);
 
   console.log('  -- お返しして済みに戻る --');
   X('paySettle',who);
@@ -2408,8 +2408,8 @@ console.log('\n=== 集金のあとの差額（2026-09-18、v55：受け取った
 
   console.log('  -- 組に戻したとき --');
   app.pEdit(i5,'g',g5); app.pEdit(i5,'f',f5);
-  T('埋めたぶんは消え、3名の差額は0に戻る', ()=>ST().filter(x=>x.cover).length===0&&ST().filter(x=>x.got&&x.diff).length===1);
-  T('戻した方には追加でいただく額が出る', ()=>by(who).diff>0&&/実費 [\d,]+円が加わりました/.test(X('payWhy',by(who))||''), ()=>X('payWhy',by(who)));
+  T('埋めたぶんは消え、15名の差額は0に戻る', ()=>ST().filter(x=>x.cover).length===0&&ST().filter(x=>x.got&&x.diff).length===1);
+  T('戻した方には追加でいただく額が出る', ()=>by(who).diff>0&&/経費 \+[\d,]+円（頭割りの人数 15→16名）/.test(X('payWhy',by(who))||''), ()=>X('payWhy',by(who)));
   X('paySettle',who);
   T('押せば全員済み', ()=>step().done===true);
 
@@ -2498,7 +2498,8 @@ app.sample(); global.flush(); app.buildSlides();
   chk('受賞者の氏名が出る',
       pz.every(s=>/name-xl">[^<]{2,}/.test(s.html())),
       pz.map(s=>(s.html().match(/name-xl">([^<]*)/)||['',''])[1]).join('/'));
-  chk('金額も出る', pz.every(s=>/\d,\d{3}円/.test(s.html())));
+  /* V1（M1）：賞は品物。金額ではなく品名（サンプルの5位はグローブ）を出し、円は出さない */
+  chk('品名も出る（金額は出ない）', pz.every(s=>/class="ws-prize">[^<]+<b>[^<]+<\/b>/.test(s.html())&&!/円/.test(s.html()))&&/グローブ/.test(pz[0].html()));
   chk('「その他の賞」は出ない', !app.slides.some(s=>s.id==='s-other'));
   chk('優勝・2位・3位・ベスグロは別に出る',
       ['s-1','s-2','s-3','s-best'].every(k=>app.slides.some(s=>s.id===k)));

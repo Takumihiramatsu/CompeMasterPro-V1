@@ -23,7 +23,7 @@ global.localStorage={setItem(){},getItem(){return null},removeItem(){}};
 ['show','hud','dots','tabs','saveState','hdTitle','pane','sndBtn','kp','gp','kpv','gpv',
  'ga_v','ga_1','ga_2','ga_3','ga_q','ga_msg','ka_v','ka_a','ka_b','ka_q','ka_msg']
   .forEach(id=>{global[id]=doc.getElementById(id)});
-const app=new Function(src+`;return {DB:()=>DB,blankDB:()=>{DB=blank();return DB},blank,sample,go,render,
+const app=new Function(src+`;return {DB:()=>DB,billOf,blankDB:()=>{DB=blank();return DB},blank,sample,go,render,
   kVoid,gVoid,calcK,calcG,votes,calcB,ledger,settle,parseGto,parseKeiba,gAdd,RUN,FRAMES,
   vSum,vBets,vHelp,applyScores,betsTab:typeof betsTab==='function'?betsTab:()=>{}};`)();
 const ok=(l,c,x='')=>console.log((c?'  OK  ':'  NG  ')+l+(x!==''&&x!==undefined?'  '+x:''));
@@ -67,10 +67,10 @@ const hitRows=DB.gto.filter(r=>r.p.includes(target));
 const hitQ=hitRows.reduce((s,r)=>s+r.q,0);
 chk('その人を指名した口がすべて無効になった', after.badUnits===hitQ, after.badUnits+' / '+hitQ);
 chk('有効口＝全口−無効口', after.units===before.units-hitQ, after.units);
-chk('売上金が無効分だけ減った', after.sales===before.sales-hitQ*DB.meta.gPrice, after.sales);
-chk('返金額＝無効口×1口の額', after.badTotal===hitQ*DB.meta.gPrice, after.badTotal);
-chk('収納ベースの口数は変わらない', after.allUnits===before.units, after.allUnits);
-chk('収納ベースの売上も変わらない', after.allSales===before.sales, after.allSales);
+/* V1（2026-09-28、M1）：予想に代金は無いので、売上・返金の検査は「数えない」ことの検査に置き換えた */
+chk('無効口の投票者ごとの口数が出る（返金ではなく数えない口として）',
+  Object.values(after.badBy).reduce((a,b)=>a+b,0)===hitQ, JSON.stringify(after.badBy));
+chk('入力された口数（有効＋無効）は変わらない', after.allUnits===before.units, after.allUnits);
 
 console.log('\n=== 3. 無効口は得票数に数えない（選抜者・罰金に波及する）===');
 chk('外れた本人の得票は0', (app.votes().find(x=>x.n===target)||{c:0}).c===0);
@@ -92,7 +92,7 @@ DB2=null;
 chk('得票の合計＝有効口×3', app.votes().reduce((a,b)=>a+b.c,0)===app.calcG().units*3,
   app.votes().reduce((a,b)=>a+b.c,0));
 
-console.log('\n=== 4. 配当は有効口だけで割る ===');
+console.log('\n=== 4. 的中は有効口だけで数える ===');
 DB=setup();
 DB.players.find(p=>p.n===target).g=0;DB.players.find(p=>p.n===target).f=0;
 const live=DB.gto.filter(r=>!app.gVoid(r));
@@ -100,25 +100,23 @@ DB.result.low=live[0].p.slice();
 DB.meta.gMode='3連単';
 let G=app.calcG();
 chk('的中口が出た', G.win>0, G.win);
-chk('配当＝有効売上÷的中口数（100円未満切り捨て）',
-  G.pay===Math.floor(G.sales/G.win/100)*100, G.pay);
-chk('無効口の掛金は配当原資に入っていない', G.sales===G.units*DB.meta.gPrice, G.sales);
+chk('的中口数は有効な口のうち当たった口だけ', G.win===live.filter(r=>r.p.join('|')===DB.result.low.join('|')).reduce((a,r)=>a+r.q,0), G.win);
 const badVoter=DB.gto.find(r=>app.gVoid(r)).v;
-chk('無効口の投票者に返金が立つ', (G.badBy[badVoter]||0)>0, G.badBy[badVoter]);
-chk('全額返金にはならない', G.refund===false);
+chk('無効口の投票者に「数えない口数」が立つ', (G.badBy[badVoter]||0)>0, G.badBy[badVoter]);
+chk('的中なしの扱いにはならない', G.nohit===false);
 
-console.log('\n=== 5. 的中ゼロの全額返金は有効口だけを対象にする ===');
+console.log('\n=== 5. 的中ゼロでも返金は無い（お金を集めていない） ===');
 DB.result.low=[N[0],N[1],N[2]];
 const zero=DB.gto.filter(r=>!app.gVoid(r)&&r.p.join('|')===[N[0],N[1],N[2]].join('|'));
 if(zero.length){DB.result.low=['幽霊　太郎',N[1],N[2]];}
 G=app.calcG();
 chk('的中者なし', G.win===0, G.win);
-chk('全額返金になった', G.refund===true);
-chk('返金総額＝有効売上（無効分は含めない）', G.refundTotal===G.sales, G.refundTotal);
-chk('無効分は別枠で返る', G.badTotal>0&&G.refundTotal+G.badTotal===G.allSales,
-  G.refundTotal+' + '+G.badTotal+' = '+G.allSales);
+chk('的中なしの印が立つ', G.nohit===true);
+chk('返金の項目を持たない', !('refund' in G)&&!('refundTotal' in G)&&!('refundBy' in G));
+chk('無効の口は有効口と別に数える', G.badUnits>0&&G.units+G.badUnits===G.allUnits,
+  G.units+' + '+G.badUnits+' = '+G.allUnits);
 
-console.log('\n=== 6. 精算：払って、そのまま返る ===');
+console.log('\n=== 6. 精算：予想は支払額に入らない（V1・M1） ===');
 DB=setup();
 DB.players.find(p=>p.n===target).g=0;DB.players.find(p=>p.n===target).f=0;
 const liveRows=DB.gto.filter(r=>!app.gVoid(r));
@@ -128,22 +126,12 @@ const L=app.ledger();
 const bv=DB.gto.filter(r=>app.gVoid(r));
 const bvName=bv[0].v;
 const row=L.find(x=>x.n===bvName);
-chk('台帳に無効返金の欄がある', row.bad>0, row.bad);
-chk('無効返金が払戻に含まれている', row.back>=row.bad, row.back);
+chk('台帳に無効の口数の欄がある', row.bad>0, row.bad);
+chk('台帳にお金の欄（払い・払戻・罰金）が無い', !('paid' in row)&&!('back' in row)&&!('fine' in row));
 const S=app.settle();
 const sr=S.find(x=>x.n===bvName);
-chk('収支表でも無効返金が払戻に入る', sr.back>=(app.calcG().badBy[bvName]||0), sr.back);
-const KG=app.calcK(),GG=app.calcG();
-const paidAll=L.reduce((a,b)=>a+b.paid,0);
-chk('請求総額＝収納ベースの売上合計', paidAll===KG.allSales+GG.allSales,
-  paidAll+' / '+(KG.allSales+GG.allSales));
-const noHit=L.find(x=>x.n===bvName&&x.bad===x.paid);
-chk('無効しか買っていない人は差引ゼロ（払って、そのまま返る）',
-  !noHit||noHit.back-noHit.paid===0, noHit?noHit.back-noHit.paid:'該当者なし');
-const backAll=L.reduce((a,b)=>a+b.back,0);
-chk('払戻総額＝配当＋無効返金',
-  backAll===KG.pay*KG.win+GG.pay*GG.win+KG.badTotal+GG.badTotal,
-  backAll+' / '+(KG.pay*KG.win+GG.pay*GG.win+KG.badTotal+GG.badTotal));
+chk('収支表に払戻・賞金・罰金の欄が無い', !('back' in sr)&&!('pz' in sr)&&!('fine' in sr));
+chk('無効の口があっても支払額は経費だけ', sr.bill===app.billOf(sr.p), sr.bill);
 
 console.log('\n=== 7. 入力の時点で弾く（すり抜けさせない）===');
 DB=setup();
@@ -179,13 +167,14 @@ app.vSum();
 const sum=global.pane.innerHTML;
 chk('集計タブに無効の一覧が出る', /無効になった口/.test(sum));
 chk('一覧に理由が載る', /出走しない方を指名/.test(sum));
-chk('返金の合計が載る', /そのままお返しします/.test(sum));
+chk('無効の口は数えないと書いてある', /的中にも得票にも数えません/.test(sum));
+chk('返金の案内が出ない', !/お返しします/.test(sum));
 /* 段階6で馬券とGTOを画面の中で切り替えるようにした。無効の口はGTOにあるので切り替えて見る */
 app.betsTab('g');
 app.vBets();
 const bets=global.pane.innerHTML;
 chk('予想入力タブの行に無効の印が付く', /無効：/.test(bets));
-chk('無効の口数と返金額が出る', /円 返金/.test(bets));
+chk('無効の口数が出る（返金額は出ない）', /口（数えません）/.test(bets)&&!/円 返金/.test(bets));
 app.vHelp();
 const help=global.pane.innerHTML;
 chk('使い方に「無効になる口」の節がある', /無効になる口/.test(help));

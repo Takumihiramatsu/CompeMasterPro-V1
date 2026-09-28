@@ -65,7 +65,8 @@ DB.keiba.push({v:N[5],a:N[0],b:N[2],q:1});      // 外れ
 let K=app.calcK();
 chk('順不同でも的中する', K.win===5, K.win);
 chk('外れの口は的中に数えない', !K.winners.some(w=>w.n===N[5]));
-chk('売上＝全口数×単価', K.sales===6*DB.meta.kPrice, K.sales);
+/* V1（2026-09-28、M1）：売上は無い。有効な口数だけを数える */
+chk('口数＝全口数（有効な口だけ）', K.units===6, K.units);
 console.log('  -- 上位2名が2名そろっていないと的中させない（ガード） --');
 DB.result.top2=[N[0],''];
 K=app.calcK();

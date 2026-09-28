@@ -43,7 +43,8 @@ DB.result.low=live[0].p.slice();
 
 console.log('=== 1. 無効口が発生している前提を確かめる ===');
 chk('欠席にした人を指名した口が無効になった', app.calcG().badUnits>0, app.calcG().badUnits+'口');
-chk('無効の返金額が立っている', app.calcG().badTotal>0, app.calcG().badTotal+'円');
+/* V1（M1）：無効の口は返金ではなく「数えない」。無効の口数が立っていることを見る */
+chk('無効の口数が立っている', app.calcG().badUnits>0, app.calcG().badUnits+'口');
 
 console.log('\n=== 2. 全タブが描ける ===');
 app.tabList().forEach(([k,label])=>{
@@ -67,11 +68,12 @@ chk('全'+app.slides.length+'画面が描画できる', e===0, e?e+'件で失敗
 
 console.log('\n=== 4. 精算表に穴がない ===');
 const L=app.ledger(),S=app.settle();
+/* V1（M1）：台帳は口数と的中だけ、収支表は経費だけ（払戻・賞金・罰金の金額は無い） */
 chk('台帳の全員に数値が入っている',
-  L.every(x=>[x.paid,x.back,x.fine,x.bad].every(v=>typeof v==='number'&&!isNaN(v))));
+  L.every(x=>[x.ku,x.gu,x.kw,x.gw,x.bad,x.lost].every(v=>typeof v==='number'&&!isNaN(v))));
 chk('収支表の全員に数値が入っている',
-  S.every(x=>[x.bill,x.back,x.fine,x.net].every(v=>typeof v==='number'&&!isNaN(v))));
-chk('欠席者も収支表に残っている（会費・投票の精算があるため）',
+  S.every(x=>[x.bill,x.play,x.cancel,x.carBack,x.net].every(v=>typeof v==='number'&&!isNaN(v))));
+chk('欠席者も収支表に残っている（経費の精算があるため）',
   S.some(x=>x.n===absent), absent);
 
 console.log('\n'+(ng?'NG '+ng+' 件':'すべて合格'));

@@ -106,6 +106,10 @@ console.log('\n--- 5. ビルドスクリプト（tools/build-venue.js）の実�
   } finally {
     _F.rmSync(tmpCfgDir, { recursive: true, force: true });
     _F.rmSync(distDir, { recursive: true, force: true });
+    /* V1（2026-09-28、M1）：空になった dist/ も消す。残すとリポジトリの直下にフォルダが増える
+       （.gitignore は Web のアップロードで上がらないことがあったので、置かずに済むようにした） */
+    const distRoot = _P.join(ROOT, 'dist');
+    try { if (_F.existsSync(distRoot) && _F.readdirSync(distRoot).length === 0) _F.rmdirSync(distRoot); } catch (e) {}
   }
 }
 

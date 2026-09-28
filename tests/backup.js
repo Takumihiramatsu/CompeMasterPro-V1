@@ -129,7 +129,9 @@ console.log('\n=== 5. 読み込み（upJson）時の未保存上書き確認 ===
   cur.players.push(named('丙　三郎')); app.setDB(cur);
 
   const fileDB=app.blank(); fileDB.meta.name='読み込むファイル'; fileDB.players.push(named('丁　四郎'));
-  const json=JSON.stringify(fileDB);
+  /* V1（2026-09-28、M1）：札（app）の無いファイルは社内版（v68）のものとして別の確認が出る。
+     ここで確かめたいのは「上書きの確認」なので、V1 で保存したファイルと同じく札を付ける */
+  const json=JSON.stringify(Object.assign({app:'CompeMasterPro-V1',schema:1},fileDB));
 
   let calledConfirm=0;
   const cf=global.confirm; global.confirm=()=>{calledConfirm++;return false;};

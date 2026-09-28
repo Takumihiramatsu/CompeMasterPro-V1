@@ -2,7 +2,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>CompeMaster Pro｜ゴルフコンペ総合運営システム</title>
 <meta name="theme-color" content="#081810">
-<meta name="description" content="参加者・組み合わせ・スコア集計・賞金・表彰式の演出までを1つで行う運営システム">
+<meta name="description" content="参加者・組み合わせ・スコア集計・予想ゲーム・表彰式の演出までを1つで行うコンペ運営アプリ">
 <link rel="manifest" href="pc.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -1378,29 +1378,33 @@ const blank=()=>({
   meta:{name:"第1回 ゴルフコンペ",place:"",date:"",
         groupSize:4,
         use:{score:true,near:true,nearAny:false,drako:true,birdie:false,keiba:true,gto:true,fine:false,prize:true,budget:true,team:false,lucky:false},
-        kPrice:200,gPrice:500,gMode:"3連複",frameMode:"group",kMode:"枠連",
-        fineUnit:1000,fineTop:3,
+        gMode:"3連複",frameMode:"group",kMode:"枠連",
+        /* V1（M1）：予想の単価（kPrice・gPrice）と罰金の単価（fineUnit）は無い。お金は経費だけ（原則 R1） */
+        fineTop:3,
         nearHoles:[4,7,12,16],nearAnyHoles:[2,11],drakoHoles:[5,14],
         sc:{system:"double",
             par:[4,4,3,5,4,4,3,4,5,4,3,4,4,5,4,3,4,5],
             hidden:[2,3,5,6,8,9,11,12,14,15,17,18],
             cut:"triplePar",hcUse:true,hcMax:30,tiebreak:"older",entry:"hidden"},
-        prizes:{rank:[{label:"優勝",kind:"rank",n:1,amt:10000},
-                      {label:"2位",kind:"rank",n:2,amt:5000},
-                      {label:"3位",kind:"rank",n:3,amt:3000},
-                      {label:"5位",kind:"rank",n:5,amt:2000},
-                      {label:"10位",kind:"rank",n:10,amt:1000},
-                      {label:"BB",kind:"last",n:2,amt:1000},
-                      {label:"ベスグロ",kind:"best",n:1,amt:2000}],
-                near:1000,nearAny:1000,drako:1000,birdie:1000,eagle:3000,team:5000,lucky:1000},
+        /* V1（M1）：賞は品物。品名（item）と出どころ（src）を持ち、金額は持たない（原則 R3） */
+        prizes:{rank:[{label:"優勝",kind:"rank",n:1,item:"",src:"host"},
+                      {label:"2位",kind:"rank",n:2,item:"",src:"host"},
+                      {label:"3位",kind:"rank",n:3,item:"",src:"host"},
+                      {label:"5位",kind:"rank",n:5,item:"",src:"host"},
+                      {label:"10位",kind:"rank",n:10,item:"",src:"host"},
+                      {label:"BB",kind:"last",n:2,item:"",src:"host"},
+                      {label:"ベスグロ",kind:"best",n:1,item:"",src:"host"}],
+                gift:{near:{item:"",src:"host"},nearAny:{item:"",src:"host"},drako:{item:"",src:"host"},
+                      birdie:{item:"",src:"host"},eagle:{item:"",src:"host"},team:{item:"",src:"host"},lucky:{item:"",src:"host"}}},
         team:{use:"sum",size:3,top:1},
         lucky:{count:2,exclude:true},
-        /* collect は当日ひとりずつから集める実費（プレー代・昼食代など）。
-           幹事が預かってゴルフ場に払うだけなので、収支の黒字赤字には響かない。
-           kGuess/gGuess は「ひとり何口買いそうか」の見込み。事前に集金額を出すために使う */
-        budget:{fee:0,income:[],expense:[],
-          collect:[{label:"プレー代（グリーンフィー・昼食）",amt:0}],
-          kGuess:6,gGuess:3,
+        /* collect は当日ひとりずつから集める経費（プレー代・懇親会費など）。
+           幹事が預かって支払い先に払うだけなので、収支の黒字赤字には響かない。
+           項目ごとに to（誰から集めるか）と、賞品購入費なら kind:"prize" を持つ。
+           V1（M1）：賞金の原資（fee）と予想の口数の見込み（kGuess・gGuess）は無い */
+        budget:{income:[],expense:[],
+          collect:[{label:"プレー代（グリーンフィー・昼食）",amt:0,mode:"each",to:"play"}],
+          prizeCap:"",leftover:"carry",
           /* 徴収額をこの単位に切り上げる。0なら丸めない。
              当日の集金でお釣りを減らすため。切り上げたぶんは繰越金に積む */
           roundUnit:0},
@@ -1408,7 +1412,7 @@ const blank=()=>({
            各組の時刻は従来どおり groups[].time に入る。古いファイルには無いので既定値で補う */
         startAt:"",startGap:7,
         /* 予想の締め切り（2026-09-17、段階6）。締め切ると予想の追加・口数の変更・削除・貼り付けを止める。
-           馬券・GTOの代金は締め切ってから集める（4.7）。時刻は押したときの「時:分」 */
+           時刻は押したときの「時:分」 */
         betsClosed:false,betsClosedAt:""},
       /* 当日モード。オンにすると、準備のタブ（大会設定・参加者・組み合わせ・予想入力）を
          隠して、当日に使うタブだけにする。機能は消さず、表示を絞るだけ。
@@ -1821,9 +1825,11 @@ const PZ=()=>DB.meta.prizes;
 const BG=()=>{const b=DB.meta.budget;
   /* 前の版で作った大会を開いたとき、足りない欄を補う */
   if(!Array.isArray(b.collect)) b.collect=[{label:"プレー代（グリーンフィー・昼食）",amt:0}];
-  if(b.kGuess===undefined) b.kGuess=6;
-  if(b.gGuess===undefined) b.gGuess=3;
   if(b.roundUnit===undefined) b.roundUnit=0;
+  /* V1（M1）：賞品購入費の1人あたり上限（SPEC-V1.md 3.3。既定値は弁護士の確認待ち＝空欄）と、
+     経費が余ったときの扱い（carry＝繰越金／return＝全員に均等に返す。SPEC 3.5） */
+  if(b.prizeCap===undefined) b.prizeCap="";
+  if(b.leftover===undefined) b.leftover="carry";
   return b;};
 /* ---- 当日いくら集めるか ----
    スコアも投票もまだ無い段階で、ひとりあたりと総額を出す。
@@ -1861,11 +1867,33 @@ const collectEach=(x,members)=>{
   return Math.ceil(collectTotal(x)/(members||1));
 };
 /* 配車した担当へ返す額。1台あたりの単価の合計 × その人の台数 */
+/* ---- 経費を誰から集めるか（V1・M1、SPEC-V1.md 3.1〜3.2） ----
+   項目ごとに to を持つ。既定は「プレーする人」（v68 の実費と同じ）。
+     play  … プレーする人（p.fee!==false。予想のみ・当日キャンセルの人は外れる）
+     party … 懇親会に出る人（p.party!==false。既定は出る）
+     stay  … 宿泊する人（p.stay が true）
+     all   … 全員
+   総額を頭割りする項目（total・unit）は、その項目を払う人数で割る */
+const PAYTO=[["play","プレーする人"],["party","懇親会に出る人"],["stay","宿泊する人"],["all","全員"]];
+const payTo=(x,p)=>{const t=x.to||"play";
+  if(t==="all") return true;
+  if(t==="party") return p.party!==false;
+  if(t==="stay") return !!p.stay;
+  return p.fee!==false;};
+const payersOf=x=>DB.players.filter(p=>payTo(x,p));
+const itemEach=x=>collectEach(x,payersOf(x).length||1);
+const expenseOf=p=>(BG().collect||[]).reduce((a,x)=>a+(payTo(x,p)?itemEach(x):0),0);
+/* ---- 1人の支払額（V1・M1。原則 R1） ----
+   経費の項目（参加の形で決まる）とキャンセル料だけから出す。スコア・予想・賞・抽選の結果は読まない。
+   読んでしまうと「成績でお金が動く」形に戻る。tests/r1_fixed.js がここからたどれる関数をすべて検査する */
+function billOf(p){ return roundBill(expenseOf(p)+cancelOf(p)); }
 const carUnitSum=()=>(BG().collect||[]).reduce((a,x)=>a+(x.mode==="unit"?(+x.amt||0):0),0);
 /* 「1台あたり」の項目があるか。金額をまだ入れていなくても、
    項目を選んだ時点で台数の欄を出す。
    金額が入るまで欄が現れず「台数を入れる方法がない」となっていた（2026-09-08） */
 const hasCarItem=()=>(BG().collect||[]).some(x=>x.mode==="unit");
+/* 「懇親会に出る人」「宿泊する人」から集める項目があるか。あるときだけ参加者に欄を出す（車の欄と同じ考え方） */
+const hasTo=t=>(BG().collect||[]).some(x=>(x.to||"play")===t);
 /* 1人1台で数える。前の版で2台と入れたデータを開いても、
    集めた額（人数）と返す額（台数）がずれないよう1台に丸める */
 const carsOf=p=>(+p.cars>0?1:0);
@@ -1878,68 +1906,34 @@ const roundBill=v=>{const u=roundUnit();
   return (u>0&&v>0)?Math.ceil(v/u)*u:v;};
 const carBackOf=p=>carUnitSum()*carsOf(p);
 function collectPlan(){
-  const b=BG(), mem=feeMembers(), run=RUN();
-  const members=mem.length||run.length||DB.players.length||1;
-  const play=(b.collect||[]).reduce((a,x)=>a+collectEach(x,members),0);
-  const fee=+b.fee||0;
-  const kUnits=DB.keiba.reduce((a,r)=>a+(+r.q||0),0);
-  const gUnits=DB.gto.reduce((a,r)=>a+(+r.q||0),0);
-  const voted=VOT().length||1;
-  const kEach=U("keiba")?(kUnits?kUnits/voted:(+b.kGuess||0))*(+DB.meta.kPrice||0):0;
-  const gEach=U("gto")?(gUnits?gUnits/voted:(+b.gGuess||0))*(+DB.meta.gPrice||0):0;
+  const b=BG(), cars=carCount();
   const rows=[];
-  const cars=carCount();
   (b.collect||[]).forEach(x=>{
-    const v=collectEach(x,members);
+    const pay=payersOf(x), members=pay.length||1, v=collectEach(x,members);
     if(!v) return;
-    let lab=x.label||"実費";
+    let lab=x.label||"経費";
     if(x.mode==="unit") lab+="（"+yen(+x.amt||0)+"円 × "+cars+"台 ÷ "+members+"名）";
     else if(x.mode==="total") lab+="（総額"+yen(+x.amt||0)+"円 ÷ "+members+"名）";
-    rows.push({l:lab,v,kind:"play",
+    rows.push({l:lab,v,to:x.to||"play",payers:pay.length,
       over:(x.mode==="each")?0:v*members-collectTotal(x)});
   });
-  if(fee) rows.push({l:"賞金の原資",v:fee,kind:"fee"});
-  if(kEach) rows.push({l:"馬券"+(kUnits?"（実際 "+Math.round(kUnits/voted*10)/10+"口）"
-    :"（見込み "+(+b.kGuess||0)+"口）"),v:Math.round(kEach),kind:"game"});
-  if(gEach) rows.push({l:"GTO"+(gUnits?"（実際 "+Math.round(gUnits/voted*10)/10+"口）"
-    :"（見込み "+(+b.gGuess||0)+"口）"),v:Math.round(gEach),kind:"game"});
-  /* ---- 一律と個別を分ける ----
-     一律 … 実費（プレー代・宿泊代・車代）と賞金の原資。プレーする全員が同じ額を払う。
-     個別 … 馬券とGTO。買う口数も買い目も人によって違う。
-     この2つを混ぜて「ひとりあたり◯◯円」と言うと、当日かならず食い違う。
-     投票だけの方は一律がゼロで、個別だけを払う（2026-09-08）。 */
-  const flatRows=rows.filter(r=>r.kind!=="game");
-  const gameRows=rows.filter(r=>r.kind==="game");
-  const flat=flatRows.reduce((a,x)=>a+x.v,0);
-  const each=rows.reduce((a,x)=>a+x.v,0);
-  /* 個別の実額。投票が入っていれば本当の口数、無ければ見込み */
-  const kMoney=U("keiba")?(kUnits?kUnits*(+DB.meta.kPrice||0):Math.round(kEach)*voted):0;
-  const gMoney=U("gto")?(gUnits?gUnits*(+DB.meta.gPrice||0):Math.round(gEach)*voted):0;
-  const flatTotal=flat*members;
-  const gameTotal=kMoney+gMoney;
-  /* 丸めたあとの目安。ひとりの徴収は 一律＋個別 なので、
-     平均の個別を足してから切り上げる */
+  /* V1（M1）：支払額は経費だけ。予想ゲームの代金・賞金の原資は無い（原則 R1）。
+     each は「プレーして懇親会にも出る人」の目安。実際の総額は1人ずつの billOf を足す */
+  const each=rows.filter(r=>r.to!=="stay").reduce((a,x)=>a+x.v,0);
   const eachRounded=roundBill(each);
-  const roundEach=eachRounded-each;
-  return {rows,flatRows,gameRows,each,eachRounded,roundEach,unit:roundUnit(),flat,play,fee,
-    kEach:Math.round(kEach),gEach:Math.round(gEach),kUnits,gUnits,kMoney,gMoney,
-    members,voters:voted,flatTotal,gameTotal,grand:flatTotal+gameTotal,
-    total:each*members,actual:!!(kUnits||gUnits),
-    over:rows.reduce((a,x)=>a+(x.over||0),0)};
+  const grand=DB.players.reduce((a,p)=>a+billOf(p),0);
+  const members=feeMembers().length||DB.players.length||1;
+  return {rows,each,eachRounded,roundEach:eachRounded-each,unit:roundUnit(),
+    members,grand,over:rows.reduce((a,x)=>a+(x.over||0),0)};
 }
-/* 賞金の原資：出走しない方（予想だけの参加）は既定で対象外。1人ずつ変更できます */
-const feeOf=p=>{
-  if(p.fee===false) return 0;
-  const v=p.feeAmt;
-  return (v===""||v===undefined||v===null)?(+BG().fee||0):(+v||0);
-};
+/* 経費の対象（プレーする人）。予想のみ・当日キャンセルの人は外れる */
 const feeMembers=()=>DB.players.filter(p=>p.fee!==false);
 /* ---- キャンセル料（2026-09-18、v55） ----
    当日のキャンセルでも、ゴルフ場にプレー代を払う規定のことがある。組から外すと実費が外れるので、
    そのままでは「ゴルフ場への支払い」が実態より少なく出る。プレーしない方（実費の対象外）にだけ
    キャンセル料を持たせ、本人の徴収額に足す。収支では預かって、そのままゴルフ場へ払う */
 const cancelOf=p=>(p.fee===false)?Math.max(0,+p.cancel||0):0;
-const feeTotal=()=>DB.players.reduce((a,p)=>a+feeOf(p),0);
+
 const nineSum=(p,back)=>{const s=scoreOf(p.n);let t=0;
   for(let i=(back?9:0);i<(back?18:9);i++){const v=+s.h[i+1];if(!v)return null;t+=v;}
   return t;};
@@ -2040,10 +2034,10 @@ function holeApplyFit(k){
 }
 function skillRows(){
   return skillKinds().map(([key,label,hk])=>{
-    const hs=DB.meta[hk]||[],unit=+PZ()[key]||0;
+    const hs=DB.meta[hk]||[],gift=giftOf(key);
     const won=hs.filter(h=>(DB[key].find(x=>+x.hole===h)||{}).who);
-    return {key,label,holes:hs,unit,n:hs.length,total:unit*hs.length,
-            wonN:won.length,wonTotal:unit*won.length,
+    return {key,label,holes:hs,gift,n:hs.length,
+            wonN:won.length,
             list:hs.map(h=>({h,who:(DB[key].find(x=>+x.hole===h)||{}).who||"",
                              rec:(DB[key].find(x=>+x.hole===h)||{}).rec||""}))};
   });
@@ -2061,55 +2055,66 @@ function birdieRows(){
       else if(diff===-1) out.push({n:p.n,hole:h,label:"バーディー",gross:v});}});
   return out.sort((a,b)=>a.hole-b.hole||nz(a.n).localeCompare(nz(b.n)));
 }
-const birdieUnit=label=>+PZ()[label==="イーグル"?"eagle":"birdie"]||0;
-const birdieTotal=()=>U("birdie")?birdieRows().reduce((s,x)=>s+birdieUnit(x.label),0):0;
-function prizeTotal(){
-  const a=prizeRows().reduce((s,r)=>s+(+r.amt||0),0);
-  const b=skillRows().reduce((s,r)=>s+r.total,0);
-  const t=U("team")?(+PZ().team||0)*(+TM().top||1):0;
-  const l=U("lucky")?(+PZ().lucky||0)*(+LK().count||0):0;
-  const d=birdieTotal();
-  return {rank:a,skill:b,team:t,lucky:l,birdie:d,all:a+b+t+l+d};
+/* ---- 賞品（V1・M1、原則 R3。SPEC-V1.md 4.5） ----
+   賞は品物。品名（item）と出どころ（src）で持ち、賞ごとの金額は持たない。
+   主催者が買う賞品の費用は、経費の「賞品購入費」（kind:"prize"）の総額でだけ扱う。
+   順位賞は PZ().rank[] の各行に、技能賞・団体賞・ラッキー賞・バーディー賞は PZ().gift[key] に持つ */
+const SRC=[["host","主催者の購入"],["venue","ゴルフ場の提供"],["sponsor","協賛"]];
+const srcLabel=v=>(SRC.find(x=>x[0]===v)||SRC[0])[1];
+const GIFTKEYS=["near","nearAny","drako","birdie","eagle","team","lucky"];
+const giftOf=key=>{const P=PZ();if(!P.gift||typeof P.gift!=="object")P.gift={};
+  const g=P.gift[key];
+  if(!g||typeof g!=="object") P.gift[key]={item:"",src:"host"};
+  return P.gift[key];};
+/* 画面に出す品名。未入力なら「賞品」とだけ出す（金額は出さない） */
+const itemText=o=>(o&&nz(o.item))?o.item:"賞品";
+/* その人がもらう賞の一覧 [[賞の名前, 品名], …] */
+function giftsOf(name){
+  const out=[];
+  prizeRows().forEach(r=>{if(r.who&&nz(r.who)===nz(name))out.push([r.label,itemText(r)]);});
+  skillRows().forEach(r=>r.list.forEach(x=>{if(x.who&&nz(x.who)===nz(name))out.push([r.label,itemText(r.gift)]);}));
+  if(U("lucky")&&(DB.result.lucky||[]).some(n=>nz(n)===nz(name))) out.push(["ラッキー賞",itemText(giftOf("lucky"))]);
+  if(U("birdie")) birdieRows().forEach(x=>{if(nz(x.n)===nz(name))
+    out.push([x.label+"賞",itemText(giftOf(x.label==="イーグル"?"eagle":"birdie"))]);});
+  return out;
 }
-function prizeOf(name){
-  let v=0;
-  prizeRows().forEach(r=>{if(r.who&&nz(r.who)===nz(name))v+=(+r.amt||0);});
-  skillRows().forEach(r=>r.list.forEach(x=>{if(x.who&&nz(x.who)===nz(name))v+=r.unit;}));
-  if(U("lucky")&&(DB.result.lucky||[]).some(n=>nz(n)===nz(name))) v+=(+PZ().lucky||0);
-  if(U("birdie")) birdieRows().forEach(x=>{if(nz(x.n)===nz(name)) v+=birdieUnit(x.label);});
-  return v;
+/* ---- 賞品購入費の上限（V1・M1、SPEC-V1.md 3.3） ----
+   上限は1人あたり。既定値は弁護士の確認待ちのため空欄。賞品購入費の項目に金額が入っていて
+   上限が空欄なら、入れるよう促す。上限を超える額は入力の時点で受け付けない（cEdit） */
+const prizeItems=()=>(BG().collect||[]).filter(x=>x.kind==="prize");
+const prizeCapOf=()=>{const c=BG().prizeCap;return (c===""||c===undefined||c===null)?null:(+c||0);};
+const prizeEachOf=()=>prizeItems().reduce((a,x)=>a+itemEach(x),0);
+function prizeCapIssue(){
+  if(!prizeItems().some(x=>+x.amt>0)) return "";
+  const c=prizeCapOf();
+  if(c===null) return "賞品購入費の上限（1人あたり）が未入力です";
+  if(prizeEachOf()>c) return "賞品購入費が1人あたりの上限（"+yen(c)+"円）を超えています";
+  return "";
 }
 function budget(){
-  const K=calcK(),G=calcG(),B=calcB(),P=prizeTotal();
-  const mem=feeMembers(),fee=feeTotal();
-  const same=mem.every(p=>p.feeAmt===""||p.feeAmt===undefined||p.feeAmt===null);
-  const inc=[{l:"賞金の原資（"+(same?yen(BG().fee)+"円 × "+mem.length+"名":mem.length+"名・金額はそれぞれ")+"）",v:fee}];
-  if(U("keiba")) inc.push({l:"馬券の残金",v:K.left});
-  if(U("gto")) inc.push({l:"GTOの残額",v:G.refund?0:G.left});
-  if(U("fine")) inc.push({l:"罰金",v:B.total});
-  /* プレー代は幹事が預かってゴルフ場へ払うだけ。収入と支出に同額を立てて相殺する。
-     片方だけに入れると黒字赤字がその分だけ狂う（2026-09-08） */
-  const play=(BG().collect||[]).reduce((a,x)=>a+collectEach(x,feeMembers().length||1),0)
-             *feeMembers().length;
-  if(play) inc.push({l:"プレー代の預かり",v:play});
-  /* キャンセル料も預かってそのままゴルフ場へ払う。収入と支出に同額を立てる（v55） */
+  /* V1（M1）：収支は経費の預かりと支払いだけ。賞金の原資・予想の残金・罰金・賞金の支出は無い。
+     預かった経費はそのまま払う（収入と支出に同額を立てて相殺する。片方だけだと黒字赤字が狂う） */
   const ST=settle();
+  const inc=[],exp=[];
+  const cars=carCount();
+  (BG().collect||[]).forEach(x=>{
+    const pay=payersOf(x), v=collectEach(x,pay.length||1)*pay.length;
+    if(!v) return;
+    const lab=x.label||"経費";
+    inc.push({l:lab+"の預かり（"+pay.length+"名）",v});
+    /* 行き先：1台あたりの項目は配車した担当へ、賞品購入費は賞品の購入へ、ほかは支払い先へ */
+    if(x.mode==="unit"){ const back=(+x.amt||0)*cars; exp.push({l:lab+"（配車した担当へ返す）",v:back});
+      if(v-back>0) exp.push({l:lab+"（頭割りの端数）",v:v-back}); }
+    else exp.push({l:(x.kind==="prize"?"賞品の購入（"+lab+"）":lab+"の支払い"),v});
+  });
+  /* キャンセル料も預かってそのままゴルフ場へ払う（v55） */
   const cx=ST.filter(x=>x.cancel), cxSum=cx.reduce((a,x)=>a+x.cancel,0);
-  if(cxSum) inc.push({l:"キャンセル料の預かり（"+cx.length+"名）",v:cxSum});
+  if(cxSum){ inc.push({l:"キャンセル料の預かり（"+cx.length+"名）",v:cxSum}); exp.push({l:"ゴルフ場へのキャンセル料",v:cxSum}); }
   /* 切り上げたぶんは繰越金として積む。幹事の取り分ではない */
   const rnd=ST.reduce((a,x)=>a+(x.roundUp||0),0);
   if(rnd) inc.push({l:"端数の繰越（"+yen(roundUnit())+"円単位に切り上げ）",v:rnd});
   (BG().income||[]).forEach(x=>inc.push({l:x.label||"その他収入",v:+x.amt||0}));
-  const exp=[];
-  if(U("prize")){ exp.push({l:"順位賞",v:P.rank},{l:"技能賞",v:P.skill});
-    if(U("team")) exp.push({l:"団体賞",v:P.team});
-    if(U("lucky")) exp.push({l:"ラッキー賞",v:P.lucky}); }
-  /* 預かったぶんの行き先を分ける。車の代金は配車した担当へ、残りはゴルフ場へ */
-  const carPay=carUnitSum()*carCount();
-  if(carPay) exp.push({l:"配車した担当へ返す",v:carPay});
-  if(play-carPay>0) exp.push({l:"ゴルフ場への支払い",v:play-carPay});
-  if(cxSum) exp.push({l:"ゴルフ場へのキャンセル料",v:cxSum});
-  /* 追加でいただく差額を繰越金で埋めたぶん。実際に受け取った額はその分だけ少ない（v55） */
+  /* 追加でいただく差額を繰越金で埋めたぶん（v55） */
   const cov=ST.reduce((a,x)=>a+(x.cover||0),0);
   if(cov) exp.push({l:"差額の穴埋め（繰越金から）",v:cov});
   (BG().expense||[]).forEach(x=>exp.push({l:x.label||"その他支出",v:+x.amt||0}));
@@ -2117,29 +2122,14 @@ function budget(){
   return {inc,exp,income:ti,expense:te,diff:ti-te};
 }
 function settle(){
-  const K=calcK(),G=calcG(),B=calcB();
+  /* V1（M1）：精算は経費だけ。配当・払戻・賞金・罰金は無い（原則 R1）。
+     支払額は billOf。配車した担当へ返す額（carBack）は台数だけで決まるので成績とは無関係 */
   const mem=feeMembers().length||1;
   return DB.players.map(p=>{
-    const kq=DB.keiba.filter(r=>r.v===p.n).reduce((s,r)=>s+r.q,0);
-    const gq=DB.gto.filter(r=>r.v===p.n).reduce((s,r)=>s+r.q,0);
-    const fee=feeOf(p);
-    /* 当日ひとりずつから集める額には、プレー代（実費の預かり）も入れる。
-       これが無いと「アプリの徴収額」と「実際に集める額」が食い違う（2026-09-08） */
-    const play=(p.fee!==false)
-      ? (BG().collect||[]).reduce((a,x)=>a+collectEach(x,mem),0) : 0;
-    const cancel=cancelOf(p);
-    const billRaw=play+fee+cancel+kq*DB.meta.kPrice+gq*DB.meta.gPrice;
-    const bill=roundBill(billRaw);
-    const roundUp=bill-billRaw;   /* 切り上げたぶん。繰越金へ */
-    const bad=(K.badBy[p.n]||0)+(G.badBy[p.n]||0);
-    const back=((K.winners.find(w=>w.n===p.n)||{c:0}).c)*K.pay
-             +((G.winners.find(w=>w.n===p.n)||{c:0}).c)*G.pay+(G.refundBy[p.n]||0)+bad;
-    const pz=U("prize")?prizeOf(p.n):0;
-    const fine=(B.list.find(x=>x.n===p.n)||{amt:0}).amt;
-    /* 配車した担当へ返す額。全員から集めたぶんをそのまま渡す */
+    const play=expenseOf(p), cancel=cancelOf(p);
+    const billRaw=play+cancel, bill=billOf(p), roundUp=bill-billRaw;   /* 切り上げたぶん。繰越金へ */
     const carBack=carBackOf(p);
-    return payState({p,n:p.n,fee,play,cancel,kq,gq,bill,billRaw,roundUp,back,pz,fine,carBack,cars:carsOf(p),
-      net:back+pz-fine+carBack,mem});
+    return payState({p,n:p.n,play,cancel,bill,billRaw,roundUp,carBack,cars:carsOf(p),net:carBack,mem});
   });
 }
 /* ---- 受け取った額と差額（2026-09-18、v55） ----
@@ -2151,7 +2141,7 @@ function settle(){
      w … 繰越金で埋めた額。足りないぶんだけ埋める。お返しするぶんは本人のお金なので埋めない
      play・fee・kq・gq・cancel・mem … 最後に精算したときの内訳（差額の理由を出すため）
    旧版の「受け取り済（true）」は、開いた時点の徴収額を受け取ったものとみなす */
-const paySnap=x=>({play:x.play,fee:x.fee,kq:x.kq,gq:x.gq,cancel:x.cancel,mem:x.mem});
+const paySnap=x=>({play:x.play,cancel:x.cancel,mem:x.mem});
 function payState(x){
   let r=DB.paid[x.n];
   if(r===true) r=DB.paid[x.n]=Object.assign({y:x.bill,w:0},paySnap(x));
@@ -2166,17 +2156,14 @@ function payState(x){
 function payWhy(x){
   const s=x.snap; if(!s||!x.diff) return "";
   const r=[], d=(a,b)=>(b>a?"+":"−")+yen(Math.abs(b-a))+"円";
-  const pw=+s.play||0, fw=+s.fee||0;
-  if(pw&&!x.play&&(fw&&!x.fee||!fw)) r.push("プレーしないため、実費"+(fw?"と賞金の原資":"")+"がなくなりました");
-  else{
-    if(pw!==x.play) r.push(!x.play?"実費がなくなりました":!pw?"実費 "+yen(x.play)+"円が加わりました"
-      :"実費 "+d(pw,x.play)+((+s.mem||0)!==x.mem?"（頭割りの人数 "+(+s.mem||0)+"→"+x.mem+"名）":""));
-    if(fw!==x.fee) r.push(!x.fee?"賞金の原資がなくなりました":!fw?"賞金の原資 "+yen(x.fee)+"円が加わりました":"賞金の原資 "+d(fw,x.fee));
-  }
-  if((+s.kq||0)!==x.kq) r.push("馬券 "+(+s.kq||0)+"→"+x.kq+"口");
-  if((+s.gq||0)!==x.gq) r.push("GTO "+(+s.gq||0)+"→"+x.gq+"口");
+  const pw=+s.play||0;
+  if(pw&&!x.play) r.push("プレーしないため、経費がなくなりました");
+  /* V1：プレーしなくなっても懇親会費などは残る。残る額を添える */
+  else if(pw>x.play&&x.p&&x.p.fee===false) r.push("プレーしないため、プレーの経費がなくなりました（残る経費 "+yen(x.play)+"円）");
+  else if(pw!==x.play) r.push(!pw?"経費 "+yen(x.play)+"円が加わりました"
+      :"経費 "+d(pw,x.play)+((+s.mem||0)!==x.mem?"（頭割りの人数 "+(+s.mem||0)+"→"+x.mem+"名）":""));
   if((+s.cancel||0)!==x.cancel) r.push(x.cancel?"キャンセル料 "+yen(x.cancel)+"円":"キャンセル料がなくなりました");
-  return r.join("・")||"単価や切り上げの設定が変わりました";
+  return r.join("・")||"経費の額や切り上げの設定が変わりました";
 }
 const payDiffLab=x=>x.diff>0?"追加で "+yen(x.diff)+"円":"お返し "+yen(-x.diff)+"円";
 
@@ -2212,18 +2199,19 @@ function gVoid(r){
 }
 function calcK(){
   const bad=DB.keiba.filter(r=>kVoid(r)),live=DB.keiba.filter(r=>!kVoid(r));
-  const units=live.reduce((s,r)=>s+(+r.q||0),0), sales=units*(+DB.meta.kPrice||0);
+  /* V1（M1）：口数と的中だけを数える。売上・配当・返金は無い（ptへの作り替えは M2） */
+  const units=live.reduce((s,r)=>s+(+r.q||0),0);
   /* 2026-09-20：馬連は枠ではなく、上位2名の氏名の組合せ（順不同）で的中を判定する */
   const hits=DB.meta.kMode==="馬連"
     ?live.filter(r=>DB.result.top2.filter(Boolean).length===2&&ckN(r.a,r.b)===ckN(DB.result.top2[0],DB.result.top2[1]))
     :live.filter(r=>ck(r.a,r.b)===DB.result.frame);
-  const win=hits.reduce((s,r)=>s+(+r.q||0),0), pay=win>0?fl(sales/win):0;
+  const win=hits.reduce((s,r)=>s+(+r.q||0),0);
   const by={};hits.forEach(r=>by[r.v]=(by[r.v]||0)+(+r.q||0));
-  const bb={};bad.forEach(r=>bb[r.v]=(bb[r.v]||0)+(+r.q||0)*(+DB.meta.kPrice||0));
-  const bu=bad.reduce((s,r)=>s+(+r.q||0),0),bt=bu*(+DB.meta.kPrice||0);
-  return {units,sales,win,pay,left:sales-pay*win,
-    bad:bad.map(r=>({...r,why:kVoid(r)})),badUnits:bu,badBy:bb,badTotal:bt,
-    allUnits:units+bu,allSales:sales+bt,
+  const bb={};bad.forEach(r=>bb[r.v]=(bb[r.v]||0)+(+r.q||0));
+  const bu=bad.reduce((s,r)=>s+(+r.q||0),0);
+  return {units,win,nohit:win===0,
+    bad:bad.map(r=>({...r,why:kVoid(r)})),badUnits:bu,badBy:bb,
+    allUnits:units+bu,
     winners:Object.entries(by).map(([n,c])=>({n,c})).sort((a,b)=>b.c-a.c)};
 }
 function gtoHit(r){
@@ -2235,17 +2223,16 @@ function gtoHit(r){
 }
 function calcG(){
   const bad=DB.gto.filter(r=>gVoid(r)),live=DB.gto.filter(r=>!gVoid(r));
-  const units=live.reduce((s,r)=>s+(+r.q||0),0), sales=units*(+DB.meta.gPrice||0);
+  /* V1（M1）：口数と的中だけ。的中なしでも返金は無い（お金を集めていないため） */
+  const units=live.reduce((s,r)=>s+(+r.q||0),0);
   const hits=live.filter(gtoHit);
-  const win=hits.reduce((s,r)=>s+(+r.q||0),0), pay=win>0?fl(sales/win):0;
+  const win=hits.reduce((s,r)=>s+(+r.q||0),0);
   const by={};hits.forEach(r=>by[r.v]=(by[r.v]||0)+(+r.q||0));
-  const rb={};if(win===0)live.forEach(r=>rb[r.v]=(rb[r.v]||0)+(+r.q||0)*(+DB.meta.gPrice||0));
-  const bb={};bad.forEach(r=>bb[r.v]=(bb[r.v]||0)+(+r.q||0)*(+DB.meta.gPrice||0));
-  const bu=bad.reduce((s,r)=>s+(+r.q||0),0),bt=bu*(+DB.meta.gPrice||0);
-  return {units,sales,win,pay,left:win>0?sales-pay*win:0,refund:win===0,
-    refundTotal:win===0?sales:0,refundBy:rb,
-    bad:bad.map(r=>({...r,why:gVoid(r)})),badUnits:bu,badBy:bb,badTotal:bt,
-    allUnits:units+bu,allSales:sales+bt,
+  const bb={};bad.forEach(r=>bb[r.v]=(bb[r.v]||0)+(+r.q||0));
+  const bu=bad.reduce((s,r)=>s+(+r.q||0),0);
+  return {units,win,nohit:win===0,
+    bad:bad.map(r=>({...r,why:gVoid(r)})),badUnits:bu,badBy:bb,
+    allUnits:units+bu,
     winners:Object.entries(by).map(([n,c])=>({n,c})).sort((a,b)=>b.c-a.c)};
 }
 function votes(){
@@ -2260,7 +2247,8 @@ function calcB(){
   const th=v[top-1]?v[top-1].c:null;
   const tie=th!==null&&v.filter(x=>x.c===th).length>1;
   const dup=new Set(sel.filter(Boolean)).size<sel.filter(Boolean).length;
-  const g=DB.result.gross, unit=+DB.meta.fineUnit||1000;
+  /* V1（M1）：選抜者に何人負けたか（lost）だけを数える。金額は無い（ptへの作り替えは M3） */
+  const g=DB.result.gross;
   const selG=sel.map(n=>g[n]).filter(x=>x!==undefined&&x!=="").map(Number);
   const list=[];
   RUN().forEach(p=>{
@@ -2268,24 +2256,21 @@ function calcB(){
     if(my===undefined||my==="")return;
     if(sel.some(n=>nz(n)===nz(p.n)))return;
     const lost=selG.filter(x=>+my>x).length;
-    if(lost>0)list.push({n:p.n,f:p.f,g:+my,lost,amt:lost*unit});
+    if(lost>0)list.push({n:p.n,f:p.f,g:+my,lost});
   });
-  list.sort((a,b)=>b.amt-a.amt||b.g-a.g);
-  return {sel,auto,tie,dup,votes:v,sg:sel.map(n=>g[n]),list,total:list.reduce((a,b)=>a+b.amt,0)};
+  list.sort((a,b)=>b.lost-a.lost||b.g-a.g);
+  return {sel,auto,tie,dup,votes:v,sg:sel.map(n=>g[n]),list,lostSum:list.reduce((a,b)=>a+b.lost,0)};
 }
 function ledger(){
+  /* V1（M1）：予想の口数・的中口数・無効口数・選抜者に負けた数だけ。お金は無い */
   const K=calcK(),G=calcG(),B=calcB(),kq={},gq={};
   DB.keiba.forEach(r=>kq[r.v]=(kq[r.v]||0)+(+r.q||0));
   DB.gto.forEach(r=>gq[r.v]=(gq[r.v]||0)+(+r.q||0));
   const names=[...new Set([...VOT().map(p=>p.n),...Object.keys(kq),...Object.keys(gq)])];
-  return names.map(n=>{
-    const ku=kq[n]||0,gu=gq[n]||0;
-    const kw=(K.winners.find(w=>w.n===n)||{c:0}).c, gw=(G.winners.find(w=>w.n===n)||{c:0}).c;
-    const bad=(K.badBy[n]||0)+(G.badBy[n]||0);
-    return {n,ku,gu,paid:ku*DB.meta.kPrice+gu*DB.meta.gPrice,bad,
-      back:kw*K.pay+gw*G.pay+(G.refundBy[n]||0)+bad,
-      fine:(B.list.find(x=>x.n===n)||{amt:0}).amt};
-  }).map(x=>({...x,net:x.back-x.fine}));
+  return names.map(n=>({n,ku:kq[n]||0,gu:gq[n]||0,
+    kw:(K.winners.find(w=>w.n===n)||{c:0}).c, gw:(G.winners.find(w=>w.n===n)||{c:0}).c,
+    bad:(K.badBy[n]||0)+(G.badBy[n]||0),
+    lost:(B.list.find(x=>x.n===n)||{lost:0}).lost}));
 }
 
 /* ================= 画面 ================= */
@@ -2326,7 +2311,8 @@ function tabAll(){
   if(U("score")) t.push(["score","スコア入力"],["rank","順位・表彰"]);
   if(U("keiba")||U("gto")) t.push(["bets","予想入力"],["sum","集計"]);
   if(U("near")||U("nearAny")||U("drako")) t.push(["prize","ニアピン・ドラコン"]);
-  if(U("prize")||U("budget")) t.push(["money","賞金・収支"]);
+  /* V1（M1）：「賞金・収支」を「賞品・経費」に改めた（SPEC-V1.md 5章）。賞は品物、お金は経費だけ */
+  if(U("prize")||U("budget")) t.push(["money","賞品・経費"]);
   if(U("budget")) t.push(["collect","集金"]);
   t.push(["result","結果・発表"],["share","結果共有・出力"],["data","データ"],["help","使い方"]);
   return t;
@@ -2399,13 +2385,13 @@ function flowSteps(){
         "参加者タブの「枠を2人ずつ割り振る」で、組をまたいで実力をそろえた枠が作れます",
         DB.meta.frameMode==="group"?"":"@pcol-f"); }
   if(U("budget")){
-    const amt=(BG().collect||[]).some(x=>+x.amt>0)||+BG().fee>0;
-    add("prep","meta","当日集める額を決める", amt, "",
-        "プレー代と賞金の原資。前の晩までに「ひとり◯◯円」と言えるように","sec-budget"); }
-  /* 締め切ったら済む（9/17の決定）。代金は締め切ってから集めるため */
+    const amt=(BG().collect||[]).some(x=>+x.amt>0);
+    add("prep","meta","当日集める額を決める", amt&&!prizeCapIssue(), prizeCapIssue()?"上限を確認":"",
+        "プレー代・懇親会費などの経費。成績では変わらないので、前の晩までに1人ずつの額を知らせられます","sec-budget"); }
+  /* 締め切ったら済む（9/17の決定）。V1 では予想に代金は無い */
   if(U("keiba")||U("gto")){ const u=[...DB.keiba,...DB.gto].reduce((a,r)=>a+(+r.q||0),0);
     add("prep","bets","予想を入力する", !!m.betsClosed, u?"締め切り前（"+u+"口）":"",
-        "紙の予想は貼り付けで一括で入ります。入れ終わったら「締め切る」を押します（代金は締め切ってから集めます）"); }
+        "紙の予想は貼り付けで一括で入ります。入れ終わったら「締め切る」を押します"); }
   /* 受け取ったあとで金額が変わった方（差額）も「済み」にしない（v55）。
      「受け取ったか」だけで判定していたため、欠席で頭割りが変わっても済みのままだった */
   if(U("budget")){ const T=named.length?settleC().filter(x=>x.pend):[];
@@ -2648,7 +2634,7 @@ function sideHtml(){
     <div class="sd-foot">${link(["home","ホーム"])}${A.filter(([k])=>phOf(k)==="etc").map(link).join("")}</div>`;
 }
 /* スマホの下タブ。大会ハブと、いまの段階の画面（最大4つ） */
-const TABSHORT={hub:"ハブ",meta:"設定",rules:"ルール",players:"参加者",groups:"組合せ",bets:"予想",money:"賞金",
+const TABSHORT={hub:"ハブ",meta:"設定",rules:"ルール",players:"参加者",groups:"組合せ",bets:"予想",money:"賞品",
   collect:"集金",score:"スコア",prize:"技能賞",rank:"順位",sum:"集計",result:"発表",share:"共有"};
 function btmHtml(){
   const A=tabAll().sort(byOrder), cur=PHASE();
@@ -2686,13 +2672,13 @@ function hubStats(){
       !plays.length?null:!(noG||noTime),"groups"),
     method:()=>stat("method","競技方法",`<span class="tx">${esc(SYSL[SC().system]||"")}</span>`,
       esc(methodSum().replace(new RegExp("^"+(SYSL[SC().system]||"")+"・?"),"")),null,"meta"),
-    keiba:()=>stat("keiba","馬券（枠連）",yen(m.kPrice)+"<em>円／口</em>",
+    keiba:()=>stat("keiba","馬券（枠連）",units(DB.keiba)+"<em>口</em>",
       !named.length?"枠は参加者を入れてから決めます":frameStep&&!frameStep.done?"枠が決まっていない方がいます":"枠は"+(m.frameMode==="group"?"組と同じ":"自分で決める"),
       !named.length?null:!frameStep||frameStep.done,"players"),
-    gto:()=>stat("gto","GTO（下位予想）",yen(m.gPrice)+"<em>円／口・"+esc(m.gMode)+"</em>",
+    gto:()=>stat("gto","GTO（下位予想）",units(DB.gto)+"<em>口・"+esc(m.gMode)+"</em>",
       units(DB.gto)?"予想 "+units(DB.gto)+"口 入力済":"予想はまだありません",units(DB.gto)?true:null,"bets"),
-    fine:()=>stat("fine","罰金",yen(m.fineUnit)+"<em>円／名</em>",
-      U("gto")?"得票上位"+m.fineTop+"名に負けた人が支払う":"GTOと一緒に使います",U("gto")?null:false,"meta"),
+    fine:()=>stat("fine","罰金",m.fineTop+"<em>名と勝負</em>",
+      U("gto")?"得票上位"+m.fineTop+"名とグロスで勝負します":"GTOと一緒に使います",U("gto")?null:false,"meta"),
     collect:()=>{const c=cnt("collect");return stat("collect","集金",(c[0]||"0")+"<em> / "+(c[1]||"0")+"名</em>",
       c[1]?(c[0]===c[1]?"全員から受け取りました":"残り "+(c[1]-c[0])+"名"):"集める方がいません",c[1]?c[0]===c[1]:null,"collect");},
     score:()=>{const c=cnt("score");return stat("score","スコア",(c[0]||"0")+"<em> / "+(c[1]||"0")+"名</em>",
@@ -2725,13 +2711,13 @@ function vHub(){
       s.ph!==nx[0]?`<small>（${PHASES[phIdx(s.ph)][1]}）</small>`:""}</span></li>`).join("")}</ol>
     <p class="hb-p">${ph==="prep"?"当日の朝、右上を「当日」に切り替えると、準備の画面が畳まれます。"
       :"表彰の前に、右上を「発表」に切り替えます。"}</p></div>`:"";
-  /* 集金の見込み。一律（実費・原資）と個別（馬券・GTO）は混ぜると当日食い違うので、内訳を出す */
+  /* 集金の見込み。V1（M1）：経費だけなので、参加のしかたが同じなら全員同じ額（成績・予想で変わらない） */
   let est="";
   if(U("budget")){ const P=collectPlan();
-    const parts=P.rows.map(r=>esc(r.kind==="game"?r.l.replace(/（(?:見込み|実際) /,"（"):r.l.replace(/（.*$/,""))+" "+yen(r.v));
-    est=`<div class="card hb-est"><h2>集金の${P.actual&&P.gameRows.length?"平均":"見込み"}（ひとり）</h2>${P.each
+    const parts=P.rows.filter(r=>r.to!=="stay").map(r=>esc(r.l.replace(/（.*$/,""))+" "+yen(r.v));
+    est=`<div class="card hb-est"><h2>集金の見込み（ひとり）</h2>${P.each
       ?`<b>${yen(P.eachRounded)}<em>円</em></b><span>${parts.join(" ＋ ")}${P.unit?`。${yen(P.unit)}円単位に切り上げ`:""}</span>
-        ${P.gameRows.length?`<p class="hb-p">予想の口数は人によって違います。ひとりずつの額は「集金」の画面に出ます。</p>`:""}`
+        <p class="hb-p">プレーして懇親会にも出る方の額です。予想のみ・宿泊ありの方の額は「集金」の画面に出ます。</p>`
       :`<span class="ng">● 当日集める額がまだ決まっていません</span>`}
       <button class="hb-lk" onclick="goStep('meta','sec-budget')">集める額を変える →</button></div>`; }
   /* すべての画面（スマホ用。PCはサイドバー、761〜1023pxは上のタブ列がある） */
@@ -2789,7 +2775,7 @@ function newCompe(){
 /* 引き継ぐもの：使うルール・競技方法とコース・技能賞のホール・予想ゲームの単価と方式・罰金・
    賞の金額・団体賞・ラッキー賞・集める額の決め方・会場・登録済みのコース。
    引き継がないもの：大会名（回数だけ進める）・開催日・参加者・組・予想・スコア・結果・集金の記録・収支の実績 */
-const COPYKEYS=["place","groupSize","use","kPrice","gPrice","gMode","kMode","frameMode","fineUnit","fineTop",
+const COPYKEYS=["place","groupSize","use","gMode","kMode","frameMode","fineTop",
   "nearHoles","nearAnyHoles","drakoHoles","sc","prizes","team","lucky"];
 function copyRules(d){
   const s=d.meta, m=DB.meta, cp=v=>JSON.parse(JSON.stringify(v));
@@ -2933,7 +2919,7 @@ function mkBasic(){
   const dflt=JSON.stringify(par)===JSON.stringify(blank().meta.sc.par);
   const can=[["参加者の登録と組み合わせ（1組"+(+m.groupSize||4)+"名）",1],
     [U("score")?"スコア入力と順位（決め方は次の画面で）":"順位（「スコア・順位」を入れると出せます）",U("score")],
-    ["表彰式の発表画面",1],["ニアピン・馬券・賞金 → 追加ルールで",0]];
+    ["表彰式の発表画面",1],["ニアピン・馬券・賞品 → 追加ルールで",0]];
   return `<div class="mk-grid"><div class="mk-main">
     <div class="mk-k">STEP 1 / 3</div><h2 class="mk-h">大会の基本を入れてください</h2>
     <p class="mk-sub">ここだけ埋めれば大会が作れます。あとから変えられます。</p>
@@ -2992,88 +2978,56 @@ function mkRules(){
 
 /* ---- 集金（段階2で「賞金・収支」から独立） ---- */
 function vCollect(){
+  /* V1（M1）：集めるのは経費だけ。1人ずつの支払額は参加のしかたと経費の項目で決まり、成績では変わらない
+     （原則 R1）。予想の代金・賞金・払戻・罰金・お渡しの列は無い。結果を待たずに集金を締められる */
   const T=settleC(), DIF=T.filter(x=>x.got&&x.diff).length;
+  const hasPlay=T.some(x=>x.play), hasCx=T.some(x=>x.cancel), hasRu=T.some(x=>x.roundUp), hasCar=T.some(x=>x.carBack);
   pane.innerHTML=`
-  ${(U("keiba")||U("gto"))&&!DB.meta.betsClosed?`<div class="msg warn no-print">予想がまだ締め切られていません。
-    馬券・GTOの代金は、締め切ってから集めます（あとから口数が変わると徴収額が変わるため）。
-    <button class="btn ghost" style="margin-left:8px" onclick="go('bets')">予想入力へ</button></div>`:""}
   ${(()=>{const only=T.filter(x=>!(+x.p.f>0)&&x.p.vote);
     if(!only.length) return "";
-    const sum=only.reduce((a,x)=>a+x.bill,0),bk=only.reduce((a,x)=>a+x.back,0);
     return `<div class="msg"><b>プレーせず予想だけの方が ${only.length}名</b>
       （${only.map(x=>esc(x.n)).join("、")}）。<br>
-      この方たちからは<b>馬券・GTOの代金だけ</b>を集めます（実費・賞金の原資はかかりません）。
-      合計 <b>${yen(sum)}円</b>を集め、的中があれば <b>${yen(bk)}円</b>をお返しします。<br>
+      予想ゲームにお金はかかりません。この方たちは、懇親会などプレー以外の経費だけを払います。<br>
       順位・技能賞・罰金の対象にはなりません。プレーしていないためです。</div>`;})()}
   ${payDifMsg(T)}
   ${cancelCard()}
   ${(()=>{const r=T.reduce((a,x)=>a+(x.roundUp||0),0);
     if(!r) return "";
-    return `<div class="msg ok"><b>徴収額を ${yen(roundUnit())}円単位に切り上げています。</b>
+    return `<div class="msg ok"><b>支払額を ${yen(roundUnit())}円単位に切り上げています。</b>
       切り上げたぶんの合計 <b>${yen(r)}円</b> は<b>繰越金</b>として積まれます
       （幹事の取り分ではありません）。収支の収入に「端数の繰越」として立ちます。</div>`;})()}
-  <div class="card" id="sec-collect"><h2>集金・精算 <small>受け取ったらチェック</small></h2>
+  <div class="card" id="sec-collect"><h2>集金 <small>受け取ったらチェック</small></h2>
     ${payCards(T)}
     <table class="hscroll pay-table"><thead>
-      <tr><th class="c" style="width:46px"></th><th></th>
-        <th class="c" colspan="${(T.some(x=>x.play)?1:0)+2}"
-          style="background:rgba(22,56,40,.5);color:var(--brass)">一律（全員同じ）</th>
-        <th class="c" colspan="${3+(T.some(x=>x.cancel)?1:0)+(T.some(x=>x.roundUp)?1:0)}" style="background:rgba(22,56,40,.35);color:var(--brass)">個別（人ごと）</th>
-        ${DIF?'<th class="c pay-dh" colspan="2">受け取り</th>':""}
-        <th class="c" colspan="${4+(T.some(x=>x.carBack)?1:0)}">精算</th></tr>
       <tr><th class="c" style="width:46px">済</th><th style="min-width:11em">氏名</th>
-      ${T.some(x=>x.play)?'<th class="n" style="min-width:6.5em">実費</th>':""}
-      <th class="n" style="min-width:6.5em">賞金の原資</th><th class="n" style="min-width:6em">一律 計</th>
-      <th class="n" style="min-width:5.5em">馬券</th><th class="n" style="min-width:5.5em">GTO</th>
-      ${T.some(x=>x.cancel)?'<th class="n" style="min-width:6.5em">キャンセル料</th>':""}
-      ${T.some(x=>x.roundUp)?'<th class="n" style="min-width:5.5em">切り上げ</th>':""}
-      <th class="n" style="min-width:6.5em">徴収額</th>
+      ${hasPlay?'<th class="n" style="min-width:6.5em">経費</th>':""}
+      ${hasCx?'<th class="n" style="min-width:6.5em">キャンセル料</th>':""}
+      ${hasRu?'<th class="n" style="min-width:5.5em">切り上げ</th>':""}
+      <th class="n" style="min-width:6.5em">支払額</th>
       ${DIF?'<th class="n pay-dh" style="min-width:7em">受け取った額</th><th class="c pay-dh" style="min-width:9.5em">差額</th>':""}
-      <th class="n" style="min-width:6em">賞金</th>
-      <th class="n" style="min-width:6.5em">払戻・返金</th>
-      ${T.some(x=>x.carBack)?'<th class="n" style="min-width:6em">車の返金</th>':""}
-      <th class="n" style="min-width:5.5em">罰金</th>
-      <th class="n" style="min-width:6.5em">お渡し</th></tr></thead><tbody>
+      ${hasCar?'<th class="n" style="min-width:6em">車の返金</th>':""}</tr></thead><tbody>
     ${T.map(x=>`<tr class="zebra${x.got&&x.diff?" pay-drow":""}"><td class="c">${x.got&&x.diff
         ?`<span class="pay-dmk" title="受け取ったあとで金額が変わりました" aria-label="差額あり">△</span>`
         :`<input type="checkbox" ${x.got?"checked":""}
         onchange="payToggle('${esc(x.n)}',this.checked)">`}</td>
-      <td>${esc(x.n)}${(+x.p.f>0)?"":' <span class="pill">投票のみ</span>'}${
-        (+x.p.f>0&&x.fee===0)?' <span class="pill">会費なし</span>':""}</td>
-      ${T.some(y=>y.play)?`<td class="n">${x.play?yen(x.play):"—"}</td>`:""}
-      <td class="n">${x.fee?yen(x.fee):"—"}</td>
-      <td class="n" style="background:rgba(22,56,40,.28)"><b>${(x.play+x.fee)?yen(x.play+x.fee):"—"}</b></td>
-      <td class="n">${x.kq?x.kq+"口 "+yen(x.kq*DB.meta.kPrice):"—"}</td>
-      <td class="n">${x.gq?x.gq+"口 "+yen(x.gq*DB.meta.gPrice):"—"}</td>
-      ${T.some(y=>y.cancel)?`<td class="n">${x.cancel?yen(x.cancel):"—"}</td>`:""}
-      ${T.some(y=>y.roundUp)?`<td class="n" style="color:var(--ink-dim)">${x.roundUp?"+"+yen(x.roundUp):"—"}</td>`:""}
+      <td>${esc(x.n)}${(+x.p.f>0)?"":' <span class="pill">予想のみ</span>'}</td>
+      ${hasPlay?`<td class="n">${x.play?yen(x.play):"—"}</td>`:""}
+      ${hasCx?`<td class="n">${x.cancel?yen(x.cancel):"—"}</td>`:""}
+      ${hasRu?`<td class="n" style="color:var(--ink-dim)">${x.roundUp?"+"+yen(x.roundUp):"—"}</td>`:""}
       <td class="n"><b>${yen(x.bill)}</b></td>
       ${DIF?`<td class="n">${x.got?yen(x.paidY)+(x.cover?`<br><small class="pay-cv">繰越から ${yen(x.cover)}</small>`:""):"—"}</td>
       <td class="c">${x.got&&x.diff?`<button type="button" class="pay-dbt${x.diff>0?" in":" out"}" title="${esc(payWhy(x))}"
         onclick="paySettle('${esc(x.n)}')">${x.diff>0?"+"+yen(x.diff)+'<span class="pay-da"> 受け取った</span>':"−"+yen(-x.diff)+'<span class="pay-da"> お返しした</span>'}</button>`:"—"}</td>`:""}
-      <td class="n" style="color:${x.pz?"var(--brass)":"inherit"}">${x.pz?yen(x.pz):"—"}</td>
-      <td class="n">${x.back?yen(x.back):"—"}</td>
-      ${T.some(y=>y.carBack)?`<td class="n">${x.carBack?yen(x.carBack):"—"}</td>`:""}
-      <td class="n" style="color:${x.fine?"var(--hit)":"inherit"}">${x.fine?yen(x.fine):"—"}</td>
-      <td class="n"><b>${yen(x.net)}</b></td></tr>`).join("")||
-      '<tr><td colspan="10">「参加者」タブで登録すると、集金の一覧がここに出ます。</td></tr>'}
+      ${hasCar?`<td class="n">${x.carBack?yen(x.carBack):"—"}</td>`:""}</tr>`).join("")||
+      '<tr><td colspan="8">「参加者」タブで登録すると、集金の一覧がここに出ます。</td></tr>'}
     <tr><td class="c">${T.filter(x=>(x.bill>0||x.got)&&!x.pend).length}/${T.filter(x=>x.bill>0||x.got).length}</td><td><b>合計</b></td>
-      ${T.some(x=>x.play)?`<td class="n"><b>${yen(T.reduce((a,b)=>a+b.play,0))}</b></td>`:""}
-      <td class="n"><b>${yen(T.reduce((a,b)=>a+b.fee,0))}</b></td>
-      <td class="n" style="background:rgba(22,56,40,.28)">
-        <b>${yen(T.reduce((a,b)=>a+b.play+b.fee,0))}</b></td>
-      <td class="n"><b>${yen(T.reduce((a,b)=>a+b.kq*DB.meta.kPrice,0))}</b></td>
-      <td class="n"><b>${yen(T.reduce((a,b)=>a+b.gq*DB.meta.gPrice,0))}</b></td>
-      ${T.some(x=>x.cancel)?`<td class="n"><b>${yen(T.reduce((a,b)=>a+b.cancel,0))}</b></td>`:""}
-      ${T.some(x=>x.roundUp)?`<td class="n"><b>${yen(T.reduce((a,b)=>a+b.roundUp,0))}</b></td>`:""}
+      ${hasPlay?`<td class="n"><b>${yen(T.reduce((a,b)=>a+b.play,0))}</b></td>`:""}
+      ${hasCx?`<td class="n"><b>${yen(T.reduce((a,b)=>a+b.cancel,0))}</b></td>`:""}
+      ${hasRu?`<td class="n"><b>${yen(T.reduce((a,b)=>a+b.roundUp,0))}</b></td>`:""}
       <td class="n"><b class="hi">${yen(T.reduce((a,b)=>a+b.bill,0))}</b></td>
       ${DIF?`<td class="n"><b>${yen(T.reduce((a,b)=>a+b.paidY,0))}</b></td>
       <td class="c"><b>${(d=>(d>0?"+":d<0?"−":"")+yen(Math.abs(d)))(T.reduce((a,b)=>a+b.diff,0))}</b></td>`:""}
-      <td class="n"><b>${yen(T.reduce((a,b)=>a+b.pz,0))}</b></td>
-      <td class="n"><b>${yen(T.reduce((a,b)=>a+b.back,0))}</b></td>
-      ${T.some(x=>x.carBack)?`<td class="n"><b>${yen(T.reduce((a,b)=>a+b.carBack,0))}</b></td>`:""}
-      <td class="n"><b>${yen(T.reduce((a,b)=>a+b.fine,0))}</b></td>
-      <td class="n"><b>${yen(T.reduce((a,b)=>a+b.net,0))}</b></td></tr>
+      ${hasCar?`<td class="n"><b>${yen(T.reduce((a,b)=>a+b.carBack,0))}</b></td>`:""}</tr>
     </tbody></table>
     <div class="row no-print" style="margin-top:11px"><button class="btn ghost" onclick="window.print()">集金表を印刷</button>
       <span class="hint">未集金：${T.filter(x=>!x.got&&x.bill>0).length}名（${yen(T.filter(x=>!x.got).reduce((a,b)=>a+b.bill,0))}円）${
@@ -3103,11 +3057,11 @@ function showPlan(){
 }
 function vRank(){
   const mode=ENT(), st=standings(), all=st.rows.length;
-  /* 受けた賞。ベスグロは賞金の設定に無くても出す */
+  /* 受けた賞。ベスグロは賞の設定に無くても出す。V1（M1）：賞は品物なので金額ではなく品名を添える */
   const pz=n=>{
-    const L=U("prize")?prizeRows().filter(r=>r.who&&nz(r.who)===nz(n)).map(r=>[r.label,+r.amt||0]):[];
-    if(st.best&&st.best.n===n&&!L.some(([l])=>/ベスグロ/.test(l))) L.unshift(["ベスグロ",0]);
-    return L.map(([l,a])=>`<span class="r-pz">${esc(l)}${a?` <b>${yen(a)}円</b>`:""}</span>`).join("");
+    const L=U("prize")?prizeRows().filter(r=>r.who&&nz(r.who)===nz(n)).map(r=>[r.label,nz(r.item)?r.item:""]):[];
+    if(st.best&&st.best.n===n&&!L.some(([l])=>/ベスグロ/.test(l))) L.unshift(["ベスグロ",""]);
+    return L.map(([l,a])=>`<span class="r-pz">${esc(l)}${a?` <b>${esc(a)}</b>`:""}</span>`).join("");
   };
   const S=skillRows(), plan=showPlan();
   const tieRow=(r,i)=>st.net[i+1]&&st.net[i+1].net===r.net
@@ -3142,7 +3096,7 @@ function vRank(){
       <span class="hint">反映すると、馬券の上位2名・GTOの下位3名・罰金のグロスが自動で入ります。</span>
     </div>
   </div>`;
-  const PT=U("prize")?prizeTotal():null;
+  const PR=U("prize")?prizeRows():null;
   const BD=U("birdie")?birdieRows():null;
   const side=`<div class="r-side no-print">
     ${S.length?`<div class="card r-sk"><h2>技能賞 <small>${S.reduce((a,x)=>a+x.wonN,0)} / ${S.reduce((a,x)=>a+x.n,0)} 決定</small></h2>
@@ -3154,9 +3108,9 @@ function vRank(){
     <div class="card r-plan"><h2>発表の順番 <small>${plan.n}枚</small></h2>
       <ol>${plan.parts.map(x=>`<li>${esc(x.l)}${x.n>1?`<small>${x.n}枚</small>`:""}</li>`).join("")}</ol>
       <p class="hint">発表の画面では ← → で進む ・ F 全画面 ・ M 音</p></div>
-    ${PT?`<div class="card r-sum"><h2>賞金合計</h2><b>${yen(PT.all)}<em>円</em></b>
-      <span>順位賞 ${yen(PT.rank)}${PT.skill?" ・ 技能賞 "+yen(PT.skill):""}${PT.birdie?" ・ バーディー・イーグル "+yen(PT.birdie):""}${PT.team?" ・ 団体賞 "+yen(PT.team):""}${PT.lucky?" ・ ラッキー賞 "+yen(PT.lucky):""}</span>
-      ${U("budget")?`<span class="${feeTotal()-PT.all<0?"ng":""}">原資 ${yen(feeTotal())}円（${feeMembers().length}名）・ 残 ${yen(feeTotal()-PT.all)}円</span>`:""}</div>`:""}
+    ${PR?`<div class="card r-sum"><h2>賞品 <small>品物で表彰します</small></h2><b>${PR.length}<em>賞</em></b>
+      <span>${PR.map(r=>esc(r.label)+(nz(r.item)?"（"+esc(r.item)+"）":"")).join(" ・ ")||"順位賞の設定なし"}</span>
+      <span>品名が空欄の賞は「賞品」と表示します。賞ごとの金額は持ちません。</span></div>`:""}
   </div>`;
   /* 反映済みならその場で始める。順位が変わっていたら知らせて反映へ（9/17の決定） */
   const stale=st.net.length?resultStale():[];
@@ -3244,7 +3198,7 @@ let FOLD={};
 const FOLDKEYS=()=>[U("score")&&"course",U("score")&&"method",
   (U("near")||U("nearAny")||U("drako"))&&"holes",(U("keiba")||U("gto")||U("fine"))&&"games",
   U("budget")&&"budget"].filter(Boolean);
-const FOLDWARN={holes:()=>holeWarn().length>0,budget:()=>prizeTotal().all>feeTotal()};
+const FOLDWARN={holes:()=>holeWarn().length>0,budget:()=>!!prizeCapIssue()};
 const foldOpen=k=>FOLD[k]!==undefined?FOLD[k]:!!(FOLDWARN[k]&&FOLDWARN[k]());
 /* toggle は、描画した時点で open のものにも後から届く。
    描画したときの状態と同じなら記録しない（空の大会で警告が出て開いた状態が、
@@ -3279,14 +3233,15 @@ function holesSum(){
 }
 function gamesSum(){
   const m=DB.meta,out=[];
-  if(U("keiba")) out.push("馬券 "+yen(m.kPrice)+"円・枠は"+(m.frameMode==="group"?"組と同じ":"自分で決める"));
-  if(U("gto")) out.push("GTO "+yen(m.gPrice)+"円・"+m.gMode);
-  if(U("fine")) out.push("罰金 上位"+m.fineTop+"名に負けた人 "+yen(m.fineUnit)+"円");
+  /* V1（M1）：予想に代金は無い（原則 R1）。口数と方式だけ */
+  if(U("keiba")) out.push("馬券・枠は"+(m.frameMode==="group"?"組と同じ":"自分で決める"));
+  if(U("gto")) out.push("GTO・"+m.gMode);
+  if(U("fine")) out.push("罰金 得票上位"+m.fineTop+"名とグロスで勝負");
   return out.join("／");
 }
 function budgetSum(){
   const c=(BG().collect||[]).filter(x=>+x.amt>0);
-  return "原資 ひとり"+yen(+BG().fee||0)+"円・実費 "+(c.length?c.length+"項目":"未設定");
+  return "経費 "+(c.length?c.length+"項目":"未設定")+(prizeCapIssue()?"・賞品購入費の上限を確認":"");
 }
 /* ---- 追加ルール（2026-09-16 大会設定のカード。2026-09-17 段階3で独立した画面にした） ----
    作成画面（P3）と追加ルールの画面（サイドバーの「追加ルール」）で同じカードを使う。
@@ -3299,9 +3254,9 @@ const RULEG=[["競技",[["score","スコア・順位","ペリア方式でネッ�
                     ["birdie","イーグル・バーディー賞","対象ホールを決めずに自動判定。手入力は不要"]]],
             ["予想ゲーム",[["keiba","馬券（枠連予想）","ネット上位2名の枠の組合せを当てる"],
                     ["gto","GTO（下位予想）","グロス下位3名を当てる"],
-                    ["fine","罰金","得票上位者に負けた人が支払う"]]],
-            ["賞とお金",[["prize","賞金","順位賞・技能賞の金額を管理"],
-                    ["budget","収支・集金","賞金の原資と実費、精算をまとめる"],
+                    ["fine","罰金","得票上位者とグロスで勝負する（お金は動かない）"]]],
+            ["賞と経費",[["prize","賞品","順位賞・技能賞の賞品（品名と出どころ）を管理"],
+                    ["budget","経費・集金","経費の項目と集金・収支をまとめる"],
                     ["team","団体賞","所属ごとのネット合計で競う"],
                     ["lucky","ラッキー賞","受賞のない方から抽選"]]]];
 const RULEKEYS=()=>RULEG.flatMap(([,ks])=>ks.map(([k])=>k));
@@ -3312,7 +3267,7 @@ const ruleFn=k=>({score:"画面が増える：スコア入力・順位・表彰"
     birdie:"順位・表彰に一覧が増える（18ホールの内訳が無いと出ません）",
     keiba:"画面が増える：予想入力・集計",gto:"画面が増える：予想入力・集計",
     fine:U("gto")?"発表に選抜者と罰金の画面":"GTOの得票で決まるので、GTOと一緒に使います",
-    prize:"画面が増える：賞金・収支",budget:"画面が増える：賞金・収支",
+    prize:"画面が増える：賞品・経費",budget:"画面が増える：賞品・経費",
     team:"発表に団体賞の画面が1枚増える",lucky:"発表の最後に抽選の画面が1枚増える"})[k];
 /* 技能賞のカードには対象ホールも出す。パーと合わなければその場で知らせる */
 function ruleTarget(k){
@@ -3331,7 +3286,7 @@ function rulesHtml(){
       <div class="rules">${ks.map(([k,l,d])=>rule(k,l,d)).join("")}</div></div>`).join("");
 }
 const RULESHORT={score:"スコア・順位",near:"ニアピン",nearAny:"何でもニアピン",drako:"ドラコン",birdie:"バーディー賞",keiba:"馬券",
-  gto:"GTO",fine:"罰金",prize:"賞金",budget:"収支・集金",team:"団体賞",lucky:"ラッキー賞"};
+  gto:"GTO",fine:"罰金",prize:"賞品",budget:"経費・集金",team:"団体賞",lucky:"ラッキー賞"};
 /* 使っているルールの札。押すと追加ルールの画面へ */
 function ruleChips(add){
   const m=DB.meta, w=holeWarn().map(x=>x.key);
@@ -3479,7 +3434,6 @@ function vMeta(){
   ${U("keiba")||U("gto")||U("fine")?fold("games","予想ゲームと罰金",gamesSum(),
      `${U("keiba")?`<h3 class="fold-h3">馬券</h3>
     <div class="row">
-      <div class="f"><label>単価（円／口）</label><input type="number" value="${m.kPrice}" oninput="DB.meta.kPrice=+this.value||0;touch()"></div>
       <div class="f"><label>券種</label><select onchange="M('kMode',this.value)">
         <option value="枠連" ${m.kMode!=="馬連"?"selected":""}>枠連（上位2名が入る枠を当てる）</option>
         <option value="馬連" ${m.kMode==="馬連"?"selected":""}>馬連（上位2名の組み合わせを当てる）</option></select></div>
@@ -3490,7 +3444,6 @@ function vMeta(){
       <span class="hint">「組と同じ」にすると、組み合わせを決めた時点で枠が自動で決まります。</span>`}
     </div>`:""}${U("gto")?`<h3 class="fold-h3">GTO</h3>
     <div class="row">
-      <div class="f"><label>単価（円／口）</label><input type="number" value="${m.gPrice}" oninput="DB.meta.gPrice=+this.value||0;touch()"></div>
       <div class="f"><label>方式</label><select onchange="M('gMode',this.value)">
         <option ${m.gMode==="3連複"?"selected":""}>3連複</option>
         <option ${m.gMode==="3連単"?"selected":""}>3連単</option></select></div>
@@ -3498,10 +3451,9 @@ function vMeta(){
     </div>`:""}${U("fine")?`<h3 class="fold-h3">罰金</h3>
     <div class="row">
       <div class="f"><label>対象者（得票上位）</label><input type="number" min="1" max="9" value="${m.fineTop}" onchange="M('fineTop',+this.value||3)"></div>
-      <div class="f"><label>1名につき（円）</label><input type="number" value="${m.fineUnit}" oninput="DB.meta.fineUnit=+this.value||0;touch()"></div>
-      <span class="hint">GTOで得票の多い上位者に、グロスで負けた人が「負けた人数×金額」を支払います。</span>
+      <span class="hint">GTOで得票の多い上位者と、ほかの全員がグロスで勝負します。お金は動きません。</span>
     </div>`:""}`):""}
-  ${U("budget")?fold("budget","賞金の原資と当日集める額",budgetSum(),prizeSourceCard()+collectCard(true),prizeTotal().all>feeTotal()):""}`;
+  ${U("budget")?fold("budget","当日集める額（経費）",budgetSum(),collectCard(true),!!prizeCapIssue()):""}`;
 }
 const holes=s=>String(s).split(/[,、\s]+/).map(x=>+x).filter(x=>x>0&&x<=36);
 
@@ -3522,7 +3474,7 @@ function gOpts(cur){
    表は「基本（氏名・所属・生年月日・組）」を既定にし、入りきらない列はまとまりで切り替える。
      基本       … 所属・部署／生年月日／組
      枠と実力   … 組／枠／実力の目安（馬券を使い、枠を自分で決めるときだけ）
-     参加とお金 … 車／参加のしかた／原資／個別額
+     参加と経費 … 車／参加のしかた／経費／懇親会・宿泊（その項目があるとき）
    列は削らない（9/16の方針）。すべて描いて、見せる列だけを CSS で選ぶ。
    選んだまとまりはファイルに残さない。貼り付けの取り込みは右の列に置く（PCでは主役） */
 let PCOL="b";
@@ -3535,7 +3487,7 @@ function pCards(byGroup){
     const c=FC(+p.f), open=PEXP===i, sub=[p.org,p.bd].filter(x=>nz(x)).map(esc).join(" ・ ");
     /* 予想のみの方は組・枠・実力が意味を持たないので、編集欄そのものを出さない
        （出したままだと、使わない欄が並ぶだけで画面が煩わしい。2026-09-20）。
-       車・原資は回るかどうかとは別の話（車は同乗するだけの場合もある）なので、そのまま出す */
+       車・経費は回るかどうかとは別の話（車は同乗するだけの場合もある）なので、そのまま出す */
     const isVote=joinOf(p)==="vote";
     return `<div class="pc${open?" open":""}">
       <button class="pc-h" onclick="pExp(${i})" aria-expanded="${open}"><span class="pc-no">${i+1}</span>
@@ -3551,9 +3503,9 @@ function pCards(byGroup){
         <div class="f w"><label>参加のしかた</label><select onchange="joinSet(${i},this.value)">
           ${JOIN.map(([v,l])=>`<option value="${v}" ${joinOf(p)===v?"selected":""}>${l}</option>`).join("")}</select></div>
         ${car?`<label class="pc-ck"><input type="checkbox" ${+p.cars>0?"checked":""} onchange="pEdit(${i},'cars',this.checked)"> 車を出す</label>`:""}
-        ${U("budget")?`<label class="pc-ck"><input type="checkbox" ${p.fee!==false?"checked":""} onchange="pEdit(${i},'fee',this.checked)"> 賞金の原資の対象</label>
-        ${p.fee===false?"":`<div class="f"><label>個別額（空欄なら標準額）</label><input type="number" step="100" placeholder="${yen(BG().fee)}"
-          value="${p.feeAmt??""}" onchange="pEdit(${i},'feeAmt',this.value)"></div>`}`:""}
+        ${U("budget")?`<label class="pc-ck"><input type="checkbox" ${p.fee!==false?"checked":""} onchange="pEdit(${i},'fee',this.checked)"> プレーの経費を払う</label>
+        ${hasTo("party")?`<label class="pc-ck"><input type="checkbox" ${p.party!==false?"checked":""} onchange="pEdit(${i},'party',this.checked)"> 懇親会に出る</label>`:""}
+        ${hasTo("stay")?`<label class="pc-ck"><input type="checkbox" ${p.stay?"checked":""} onchange="pEdit(${i},'stay',this.checked)"> 宿泊する</label>`:""}`:""}
         <div class="pc-ops"><button class="btn ghost" onclick="pMove(${i},-1)"${i?"":" disabled"}>▲ 上へ</button>
           <button class="btn ghost" onclick="pMove(${i},1)"${i+1<DB.players.length?"":" disabled"}>▼ 下へ</button>
           <button class="btn ghost pc-del" onclick="pDel(${i})">削除</button></div>
@@ -3562,7 +3514,7 @@ function pCards(byGroup){
     ${!byGroup&&U("keiba")&&DB.players.length?'<button class="btn ghost pc-pair" onclick="fPair2()">枠を2人ずつ割り振る（組をまたぐ）</button>':""}
   </div>`;
 }
-const PCOLS=()=>[["b","基本"],U("keiba")&&DB.meta.frameMode!=="group"&&["f","枠と実力"],["m","参加とお金"]].filter(Boolean);
+const PCOLS=()=>[["b","基本"],U("keiba")&&DB.meta.frameMode!=="group"&&["f","枠と実力"],["m","参加と経費"]].filter(Boolean);
 function pColSet(k){ PCOL=k; render(); }
 function vPlayers(){
   const dup=DB.players.map(p=>nz(p.n)).filter((x,i,a)=>x&&a.indexOf(x)!==i);
@@ -3573,7 +3525,7 @@ function vPlayers(){
   const fStep=flowSteps().find(s=>s.label==="馬券の枠を決める");
   const warn={f:!!(fStep&&!fStep.done&&named.length),m:!!(U("budget")&&hasCarItem()&&!carCount())};
   const seg=PCOLS().map(([k,l])=>`<button class="${PCOL===k?"on":""}" aria-pressed="${PCOL===k}" onclick="pColSet('${k}')">${l}${warn[k]?'<i class="p-w">●</i>':""}</button>`).join("");
-  /* 列のまとまり。cb＝基本、cf＝枠と実力、cm＝参加とお金 */
+  /* 列のまとまり。cb＝基本、cf＝枠と実力、cm＝参加と経費 */
   const needBd=["older","younger"].includes(SC().tiebreak);
   pane.innerHTML=`
   <div class="p-grid">
@@ -3591,8 +3543,8 @@ function vPlayers(){
       <b>参加のしかた</b>は3つから選びます。<br>
       　<b>プレー＋予想</b>…回って、馬券・GTOも買う（ふつうはこれ）<br>
       　<b>プレーのみ</b>…回るけれど、予想ゲームには参加しない<br>
-      　<b>予想のみ</b>…回らず、馬券・GTOだけ買う。${U("budget")?"組と枠が外れ、実費と賞金の原資もかかりません":"組と枠が外れます"}<br>
-      ${U("budget")?"個別額は、その方だけ原資の額が違うときに入れてください（空欄なら標準額）。":""}</div>
+      　<b>予想のみ</b>…回らず、馬券・GTOだけ楽しむ。${U("budget")?"組と枠が外れ、プレーの経費もかかりません":"組と枠が外れます"}<br>
+      ${U("budget")?"予想ゲームにお金はかかりません。1人ずつの支払額は、参加のしかたと経費の項目だけで決まります。":""}</div>
     ${dup.length?`<div class="msg ng">同じ氏名が重複しています：${[...new Set(dup)].join("、")}　区別できるよう変更してください。</div>`:""}
     ${pCards(byGroup)}
     <table class="ptab" style="margin-top:13px"><thead><tr>
@@ -3604,15 +3556,17 @@ function vPlayers(){
       ${U("budget")&&hasCarItem()?`<th class="n col cm" style="min-width:5.5em${
         carCount()?"":";color:#e88"}">車${carCount()?"":"<br><small>未選択</small>"}</th>`:""}
       <th class="c col cm" style="min-width:12.5em">参加のしかた</th>
-      ${U("budget")?'<th class="c col cm" style="width:56px">原資</th><th class="n col cm" style="min-width:6.5em">個別額</th>':""}
+      ${U("budget")?'<th class="c col cm" style="width:56px">経費</th>'
+        +(hasTo("party")?'<th class="c col cm" style="width:64px">懇親会</th>':"")
+        +(hasTo("stay")?'<th class="c col cm" style="width:56px">宿泊</th>':""):""}
       <th class="c no-print" style="width:92px">並べ替え</th>
     </tr></thead><tbody id="rtb">
     ${DB.players.map((p,i)=>{const c=FC(+p.f);
       /* 予想のみ（回らない）と決めた方は、組・枠・実力の欄が意味を持たない。
          生きたセレクト／入力のままだと、誤って組や枠が入ってしまったり、
          使わない欄が並ぶだけで画面が煩わしくなる（2026-09-20）。
-         ダッシュ表示にして「確定済みで触る欄がない」ことを見せる（個別額は元から同じ扱い）。
-         車・原資は回るかどうかとは別の話（車は同乗するだけの場合もある）なので、そのまま出す */
+         ダッシュ表示にして「確定済みで触る欄がない」ことを見せる。
+         車・経費は回るかどうかとは別の話（車は同乗するだけの場合もある）なので、そのまま出す */
       const isVote=joinOf(p)==="vote", dash='<span style="color:var(--ink-dim)">—</span>';
       return `<tr class="zebra" draggable="true"
         ondragstart="dgStart(event,${i})" ondragover="dgOver(event,${i})" ondrop="dgDrop(event,${i})" ondragend="dgEnd()">
@@ -3630,11 +3584,9 @@ function vPlayers(){
       <td class="c col cm"><select onchange="joinSet(${i},this.value)">
         ${JOIN.map(([v,l])=>`<option value="${v}" ${joinOf(p)===v?"selected":""}>${l}</option>`).join("")}
       </select></td>
-      ${U("budget")?`<td class="c col cm"><input type="checkbox" ${p.fee!==false?"checked":""} onchange="pEdit(${i},'fee',this.checked)"></td>
-      <td class="n col cm">${p.fee===false
-        ? dash
-        : `<input class="q" style="width:80px" type="number" step="100" placeholder="${yen(BG().fee)}"
-            value="${p.feeAmt??""}" onchange="pEdit(${i},'feeAmt',this.value)">`}</td>`:""}
+      ${U("budget")?`<td class="c col cm"><input type="checkbox" ${p.fee!==false?"checked":""} onchange="pEdit(${i},'fee',this.checked)" aria-label="プレーの経費を払う"></td>`
+        +(hasTo("party")?`<td class="c col cm"><input type="checkbox" ${p.party!==false?"checked":""} onchange="pEdit(${i},'party',this.checked)" aria-label="懇親会に出る"></td>`:"")
+        +(hasTo("stay")?`<td class="c col cm"><input type="checkbox" ${p.stay?"checked":""} onchange="pEdit(${i},'stay',this.checked)" aria-label="宿泊する"></td>`:""):""}
       <td class="c no-print p-ops"><button class="mv" onclick="pMove(${i},-1)" aria-label="上へ">▲</button><button class="mv" onclick="pMove(${i},1)" aria-label="下へ">▼</button><button class="del" onclick="pDel(${i})" aria-label="削除">×</button></td></tr>`;}).join("")||
       '<tr><td colspan="12">まだ誰も登録されていません。「貼り付けて取り込む」（PCでは右、スマホでは下）で、Excelから一度に入れられます。</td></tr>'}
     </tbody></table>
@@ -3647,8 +3599,7 @@ function vPlayers(){
     </div>
     <div class="stat-row"><div>参加者<b>${DB.players.length}名</b></div>
       <div>出走<b>${RUN().length}名</b></div><div>投票者<b>${VOT().length}名</b></div>
-      ${U("budget")?`<div>原資の対象<b>${feeMembers().length}名</b></div>
-        <div>賞金の原資 合計<b class="hi">${yen(feeTotal())}円</b></div>`:""}
+      ${U("budget")?`<div>プレーの経費<b>${feeMembers().length}名</b></div>`:""}
       <div>枠<b>${FRAMES().length}</b></div></div>
   </div>
   <div class="p-side no-print${named.length?"":" first"}">
@@ -3736,7 +3687,7 @@ function bulkApply(){
     if(!r.ok) return;
     const p=DB.players.find(x=>nz(x.n)===nz(r.name));
     if(p){ if(r.org)p.org=r.org; if(r.bd)p.bd=r.bd; u++; }
-    else { DB.players.push({n:r.name,org:r.org,bd:r.bd,g:0,f:0,vote:true,fee:true,feeAmt:"",join:"both"}); a++; }
+    else { DB.players.push({n:r.name,org:r.org,bd:r.bd,g:0,f:0,vote:true,fee:true,join:"both"}); a++; }
   });
   BPV=[];touch();render();
   alert("新規 "+a+"名、更新 "+u+"名を取り込みました。");
@@ -3750,15 +3701,16 @@ function pEdit(i,k,v){
        これが無いと「組は未定なのに出走者に数えられる」状態になる（2026-09-08） */
     else if(!p.g) p.f=0;}
   else if(k==="f") p.f=+v||0;
-  else if(k==="feeAmt") p.feeAmt=(v===""?"":(+v||0));
+  else if(k==="party") p.party=!!v;
+  else if(k==="stay") p.stay=!!v;
   else if(k==="skill") p.skill=(v===""?"":(+v||0));
   else if(k==="cars") p.cars=(+v||0);
   else if(k==="cancel") p.cancel=Math.max(0,+v||0);
   else p[k]=v;
   if(k==="g"||k==="f"){const now=+p.f>0; if(was!==now) p.fee=now;}
-  touch(); if(["g","f","vote","fee","feeAmt","cancel"].includes(k)) render();
+  touch(); if(["g","f","vote","fee","party","stay","cancel"].includes(k)) render();
 }
-function pAdd(){DB.players.push({n:"",org:"",bd:"",g:0,f:0,vote:true,fee:true,feeAmt:"",join:"both"});PEXP=DB.players.length-1;touch();render();}
+function pAdd(){DB.players.push({n:"",org:"",bd:"",g:0,f:0,vote:true,fee:true,join:"both"});PEXP=DB.players.length-1;touch();render();}
 function pDel(i){if(!confirm((DB.players[i].n||"この行")+" を削除します。よろしいですか。"))return;DB.players.splice(i,1);PEXP=-1;touch();render();}
 function pMove(i,d){const j=i+d;if(j<0||j>=DB.players.length)return;
   const a=DB.players;[a[i],a[j]]=[a[j],a[i]];if(PEXP===i)PEXP=j;else if(PEXP===j)PEXP=i;touch();render();}
@@ -4013,6 +3965,7 @@ function gOut(n){const p=DB.players.find(x=>x.n===n);if(p){p.g=0;p.f=0;   /* 組
      プレーのみ   … 回るが、予想ゲームには参加しない
      予想のみ     … 回らず、馬券・GTOだけ買う。実費も原資もかからない */
 const JOIN=[["both","プレー＋予想"],["play","プレーのみ"],["vote","予想のみ"]];
+/* V1（M1）：予想にお金はかからない。「予想のみ」の方はプレーの経費が外れる（懇親会・宿泊は別の欄で決まる） */
 /* 2026-09-20：p.join（このプルダウンで選んだ値そのもの）があれば最優先で使う。
    無ければ従来どおり f・vote から推定する（未選択のまま＝組がまだ無い新規参加者の既定表示のため） */
 const joinOf=p=>p.join||((!(+p.f>0)&&p.vote)?"vote":(p.vote?"both":"play"));
@@ -4873,18 +4826,17 @@ function vBets(){
       </div></div>
     <div class="card"><h2>馬券（馬連） <small>同じ買い目は口数でまとめます</small></h2>
     <table><thead><tr><th style="min-width:10.5em">投票者</th><th style="min-width:13em">買い目</th><th class="c" style="width:88px">口数</th>
-      <th class="n" style="width:96px">金額</th><th class="c" style="width:46px"></th></tr></thead><tbody>
+<th class="c" style="width:46px"></th></tr></thead><tbody>
     ${DB.keiba.length?DB.keiba.map((r,i)=>{const bad=kVoid(r);return `<tr class="zebra"><td>${esc(r.v)}${
         bad?'<br><small class="warn">無効：'+esc(bad)+"</small>":""}</td>
       <td>${esc(r.a)} ・ ${esc(r.b)}</td>
       <td class="c"><input class="q" type="number" min="1" value="${r.q}" onchange="kQ(${i},this.value)"${dis}></td>
-      <td class="n" ${bad?'style="text-decoration:line-through;color:var(--ink-dim)"':""}>${yen(r.q*m.kPrice)}</td>
       <td class="c">${closed?"":`<button class="del" onclick="kDel(${i})">×</button>`}</td></tr>`;}).join("")
-      :'<tr><td colspan="5">まだ投票がありません。上の欄で選んで「追加」を押してください。</td></tr>'}
+      :'<tr><td colspan="4">まだ投票がありません。上の欄で選んで「追加」を押してください。</td></tr>'}
     </tbody></table>
     ${wait(DB.keiba)}
-    <div class="stat-row"><div>口数<b>${K.units}</b></div><div>売上金<b class="hi">${yen(K.sales)}円</b></div>
-      ${K.badUnits?`<div>無効<b class="warn">${K.badUnits}口 / ${yen(K.badTotal)}円 返金</b></div>`:""}
+    <div class="stat-row"><div>口数<b class="hi">${K.units}</b></div>
+      ${K.badUnits?`<div>無効<b class="warn">${K.badUnits}口（数えません）</b></div>`:""}
       <div>行数<b>${DB.keiba.length}</b></div></div></div>
     ${paste("kp","kPaste","kpv","山田　太郎&#9;鈴木　一郎&#9;佐々木　花子&#9;2",
       "「氏名・買い目2名・口数」の並び。<b>氏名の順番は問いません</b>（順不同）。口数を省くと1口。")}`;
@@ -4892,8 +4844,8 @@ function vBets(){
     R=`<div class="card b-pop"><h2>組合せの人気 <small>口数の多い順</small></h2>
       <ol class="b-votes">${pv.slice(0,6).map(x=>`<li><span>${x.names.map(esc).join("・")}</span><b>${x.c}</b></li>`).join("")||"<li><span>まだ投票がありません</span></li>"}</ol>
       ${both?`<p class="hb-p">いま選んでいる ${esc(a)}・${esc(b)} は ${(pv.find(x=>x.k===ckN(a,b))||{c:0}).c}口。</p>`:""}</div>
-    <div class="card b-sales"><h2>馬券（馬連） 売上</h2><b>${yen(K.sales)}<em>円</em></b><span>${K.units}口 × ${yen(m.kPrice)}円。当選の組合せの口数で等分します。</span>
-      ${K.badUnits?`<span class="warn">無効 ${K.badUnits}口（${yen(K.badTotal)}円）は返金</span>`:""}</div>
+    <div class="card b-sales"><h2>馬券（馬連） 総口数</h2><b>${K.units}<em>口</em></b><span>予想にお金はかかりません。上位2名の組合せを当てた口を的中として数えます。</span>
+      ${K.badUnits?`<span class="warn">無効 ${K.badUnits}口は数えません</span>`:""}</div>
     ${U("gto")?`<div class="card b-prog"><h2>GTO の進み <small>${V.length-betsWait(DB.gto).length} / ${V.length}</small></h2>
       <p class="hb-p">必ず「最下位 → 下位2位 → 下位3位」の順に選びます。上の切替で GTO へ。</p></div>`:""}`;
   }else if(BTAB==="k"){
@@ -4911,18 +4863,17 @@ function vBets(){
       </div></div>
     <div class="card"><h2>馬券 <small>同じ買い目は口数でまとめます</small></h2>
     <table><thead><tr><th style="min-width:10.5em">投票者</th><th class="c" style="min-width:8em">買い目</th><th class="c" style="width:88px">口数</th>
-      <th class="n" style="width:96px">金額</th><th class="c" style="width:46px"></th></tr></thead><tbody>
+<th class="c" style="width:46px"></th></tr></thead><tbody>
     ${DB.keiba.length?DB.keiba.map((r,i)=>{const bad=kVoid(r);return `<tr class="zebra"><td>${esc(r.v)}${
         bad?'<br><small class="warn">無効：'+esc(bad)+"</small>":""}</td>
       <td class="c">${chip(r.a)}${chip(r.b)} <b style="font-family:var(--num)">${ck(r.a,r.b)}</b></td>
       <td class="c"><input class="q" type="number" min="1" value="${r.q}" onchange="kQ(${i},this.value)"${dis}></td>
-      <td class="n" ${bad?'style="text-decoration:line-through;color:var(--ink-dim)"':""}>${yen(r.q*m.kPrice)}</td>
       <td class="c">${closed?"":`<button class="del" onclick="kDel(${i})">×</button>`}</td></tr>`;}).join("")
-      :'<tr><td colspan="5">まだ投票がありません。上の欄で選んで「追加」を押してください。</td></tr>'}
+      :'<tr><td colspan="4">まだ投票がありません。上の欄で選んで「追加」を押してください。</td></tr>'}
     </tbody></table>
     ${wait(DB.keiba)}
-    <div class="stat-row"><div>口数<b>${K.units}</b></div><div>売上金<b class="hi">${yen(K.sales)}円</b></div>
-      ${K.badUnits?`<div>無効<b class="warn">${K.badUnits}口 / ${yen(K.badTotal)}円 返金</b></div>`:""}
+    <div class="stat-row"><div>口数<b class="hi">${K.units}</b></div>
+      ${K.badUnits?`<div>無効<b class="warn">${K.badUnits}口（数えません）</b></div>`:""}
       <div>行数<b>${DB.keiba.length}</b></div></div></div>
     ${paste("kp","kPaste","kpv","山田　太郎&#9;1-3&#9;2&#10;鈴木　一郎,2,4,1&#10;佐々木　花子  4-4",
       "「氏名・買い目・口数」の並び。買い目は <b>1-3</b> でも <b>1（タブ）3</b> でも可。口数を省くと1口。同じ買い目は自動でまとめます。")}`;
@@ -4931,8 +4882,8 @@ function vBets(){
     R=`<div class="card b-pop"><h2>枠の人気 <small>マスの数字は口数</small></h2>
       <div class="b-mx">${kGrid({sel:both?ck(a,b):"",top:best?best[0]:""})}</div>
       <p class="hb-p">${best?`一番人気は <b>${best[0]}</b>（${best[1]}口）。`:"まだ投票がありません。"}${both?`いま選んでいる ${ck(a,b)} は ${cnt[ck(a,b)]||0}口。`:""}</p></div>
-    <div class="card b-sales"><h2>馬券 売上</h2><b>${yen(K.sales)}<em>円</em></b><span>${K.units}口 × ${yen(m.kPrice)}円。当選枠の口数で等分します。</span>
-      ${K.badUnits?`<span class="warn">無効 ${K.badUnits}口（${yen(K.badTotal)}円）は返金</span>`:""}</div>
+    <div class="card b-sales"><h2>馬券 総口数</h2><b>${K.units}<em>口</em></b><span>予想にお金はかかりません。当選枠に置いた口を的中として数えます。</span>
+      ${K.badUnits?`<span class="warn">無効 ${K.badUnits}口は数えません</span>`:""}</div>
     ${U("gto")?`<div class="card b-prog"><h2>GTO の進み <small>${V.length-betsWait(DB.gto).length} / ${V.length}</small></h2>
       <p class="hb-p">必ず「最下位 → 下位2位 → 下位3位」の順に選びます。上の切替で GTO へ。</p></div>`:""}`;
   }else{
@@ -4953,27 +4904,25 @@ function vBets(){
       </div></div>
     <div class="card"><h2>GTO <small>必ず「最下位 → 下位2位 → 下位3位」の順で選びます</small></h2>
     <table><thead><tr><th style="min-width:10.5em">投票者</th><th style="min-width:13em">指名</th><th class="c" style="width:88px">口数</th>
-      <th class="n" style="width:96px">金額</th><th class="c" style="width:46px"></th></tr></thead><tbody>
+<th class="c" style="width:46px"></th></tr></thead><tbody>
     ${DB.gto.length?DB.gto.map((r,i)=>{const bad=gVoid(r);return `<tr class="zebra"><td>${esc(r.v)}${
         bad?'<br><small class="warn">無効：'+esc(bad)+"</small>":""}</td><td>${r.p.map(esc).join(" → ")}</td>
       <td class="c"><input class="q" type="number" min="1" value="${r.q}" onchange="gQ(${i},this.value)"${dis}></td>
-      <td class="n" ${bad?'style="text-decoration:line-through;color:var(--ink-dim)"':""}>${yen(r.q*m.gPrice)}</td>
       <td class="c">${closed?"":`<button class="del" onclick="gDel(${i})">×</button>`}</td></tr>`;}).join("")
-      :'<tr><td colspan="5">まだ投票がありません。上の欄で選んで「追加」を押してください。</td></tr>'}
+      :'<tr><td colspan="4">まだ投票がありません。上の欄で選んで「追加」を押してください。</td></tr>'}
     </tbody></table>
     ${wait(DB.gto)}
-    <div class="stat-row"><div>口数<b>${G.units}</b></div><div>売上金<b class="hi">${yen(G.sales)}円</b></div>
-      ${G.badUnits?`<div>無効<b class="warn">${G.badUnits}口 / ${yen(G.badTotal)}円 返金</b></div>`:""}
-      <div>行数<b>${DB.gto.length}</b></div>
-      <div>回収総額<b class="hi">${yen(K.allSales+G.allSales)}円</b></div></div></div>
+    <div class="stat-row"><div>口数<b class="hi">${G.units}</b></div>
+      ${G.badUnits?`<div>無効<b class="warn">${G.badUnits}口（数えません）</b></div>`:""}
+      <div>行数<b>${DB.gto.length}</b></div></div></div>
     ${paste("gp","gPaste","gpv","山田　太郎&#9;佐々木　花子&#9;鈴木　一郎&#9;高木　淳&#9;2&#10;鈴木　一郎,鈴木　一郎,高木　淳,中西　学,1",
       "「投票者・最下位・下位2位・下位3位・口数」の並び。<b>氏名の順番がそのまま予想の順番</b>になります。口数を省くと1口。")}`;
     const vt=votes().filter(x=>x.c>0).slice(0,5);
     R=`<div class="card b-pop"><h2>得票の多い方 <small>有効な口だけ</small></h2>
       <ol class="b-votes">${vt.map((x,i)=>`<li><span>${U("fine")&&i<m.fineTop?"★ ":""}${esc(x.n)}</span><b>${x.c}</b></li>`).join("")||"<li><span>まだ投票がありません</span></li>"}</ol>
-      ${U("fine")?`<p class="hb-p">★ は罰金の基準になる上位${m.fineTop}名（いまの得票）。</p>`:""}</div>
-    <div class="card b-sales"><h2>GTO 売上</h2><b>${yen(G.sales)}<em>円</em></b><span>${G.units}口 × ${yen(m.gPrice)}円・${esc(m.gMode)}。的中者がいなければ全額返金。</span>
-      ${G.badUnits?`<span class="warn">無効 ${G.badUnits}口（${yen(G.badTotal)}円）は返金</span>`:""}</div>
+      ${U("fine")?`<p class="hb-p">★ は罰金の勝負の相手になる上位${m.fineTop}名（いまの得票）。</p>`:""}</div>
+    <div class="card b-sales"><h2>GTO 総口数</h2><b>${G.units}<em>口</em></b><span>${esc(m.gMode)}。予想にお金はかかりません。</span>
+      ${G.badUnits?`<span class="warn">無効 ${G.badUnits}口は数えません</span>`:""}</div>
     ${U("keiba")?`<div class="card b-prog"><h2>馬券の進み <small>${V.length-betsWait(DB.keiba).length} / ${V.length}</small></h2>
       <p class="hb-p">上の切替で馬券へ。</p></div>`:""}`;
   }
@@ -5185,27 +5134,23 @@ function vSum(){
   pane.innerHTML=`
   ${U("keiba")?`<div class="card"><h2>馬券の人気 <small>${uma?"口数の多い組合せ順。当選の組合せに印":"マス目の数字は口数。当選の組合せに印（予想入力の画面にも同じ表）"}</small></h2>
     ${uma?kPop:kGrid({hit:DB.result.frame})}
-    <div class="stat-row"><div>馬券<b>${K.units}口 / ${yen(K.sales)}円</b></div>
-      <div>GTO<b>${G.units}口 / ${yen(G.sales)}円</b></div>
-      <div>回収総額<b class="hi">${yen(K.allSales+G.allSales)}円</b></div></div></div>`:""}
+    <div class="stat-row"><div>馬券<b>${K.units}口</b></div>
+      <div>GTO<b>${G.units}口</b></div>
+      <div>的中<b class="hi">馬券 ${K.win}口・GTO ${G.win}口</b></div></div></div>`:""}
   ${K.badUnits+G.badUnits?`<div class="card"><h2>無効になった口
-      <small>売上に入れず、掛金はそのままお返しします</small></h2>
+      <small>的中にも得票にも数えません</small></h2>
     <table><thead><tr><th style="min-width:5em">種別</th><th style="min-width:10.5em">投票者</th><th style="min-width:13em">買い目・指名</th>
-      <th class="c" style="width:66px">口数</th><th class="n" style="min-width:6em">返金</th>
+      <th class="c" style="width:66px">口数</th>
       <th style="min-width:14em">理由</th></tr></thead><tbody>
     ${K.bad.map(r=>`<tr class="zebra"><td>馬券</td><td>${esc(r.v)}</td>
       <td>${uma?esc(r.a)+" ・ "+esc(r.b):chip(r.a)+chip(r.b)+" "+ck(r.a,r.b)}</td><td class="c">${r.q}</td>
-      <td class="n">${yen(r.q*DB.meta.kPrice)}</td>
       <td style="color:var(--ink-dim)">${esc(r.why)}</td></tr>`).join("")}
     ${G.bad.map(r=>`<tr class="zebra"><td>GTO</td><td>${esc(r.v)}</td>
       <td>${r.p.map(esc).join(" → ")}</td><td class="c">${r.q}</td>
-      <td class="n">${yen(r.q*DB.meta.gPrice)}</td>
       <td style="color:var(--ink-dim)">${esc(r.why)}</td></tr>`).join("")}
-    <tr><td colspan="3"><b>合計</b></td><td class="c"><b>${K.badUnits+G.badUnits}口</b></td>
-      <td class="n"><b>${yen(K.badTotal+G.badTotal)}</b></td><td></td></tr>
+    <tr><td colspan="3"><b>合計</b></td><td class="c"><b>${K.badUnits+G.badUnits}口</b></td><td></td></tr>
     </tbody></table>
-    <div class="hint" style="margin-top:10px">無効の口は<b>配当の原資に入りません</b>。得票数にも数えません。<br>
-      掛金は「賞金・収支」タブの払戻・返金に含めて、そのままお返しします。</div></div>`:""}
+    <div class="hint" style="margin-top:10px">無効の口は<b>的中にも得票にも数えません</b>。予想にお金はかからないので、返金もありません。</div></div>`:""}
   <div class="grid2">
     ${U("gto")?`<div class="card"><h2>GTO 得票数${U("fine")?" <small>上位"+DB.meta.fineTop+"名が罰金の基準</small>":""}</h2>
       <table><thead><tr><th class="c" style="width:46px">順</th><th style="min-width:10.5em">氏名</th><th class="n">得票</th></tr></thead><tbody>
@@ -5213,14 +5158,15 @@ function vSum(){
         <td>${U("fine")&&i<DB.meta.fineTop?"★ ":""}${esc(x.n)}</td><td class="n">${x.c}</td></tr>`).join("")||
         '<tr><td colspan="3">GTOの投票を入れると、ここに得票数が並びます。</td></tr>'}
       </tbody></table></div>`:""}
-    <div class="card"><h2>1人ずつの支払額 <small>回収時の突合用</small></h2>
-      <table><thead><tr><th style="min-width:10.5em">氏名</th><th class="n">馬券</th><th class="n">GTO</th><th class="n">お支払い</th></tr></thead><tbody>
-      ${L.map(x=>`<tr class="zebra"><td>${esc(x.n)}</td><td class="n">${x.ku}口</td>
-        <td class="n">${x.gu}口</td><td class="n">${yen(x.paid)}</td></tr>`).join("")||
-        '<tr><td colspan="4">—</td></tr>'}
-      <tr><td><b>合計</b></td><td class="n"><b>${K.allUnits}口</b></td><td class="n"><b>${G.allUnits}口</b></td>
-        <td class="n"><b>${yen(K.allSales+G.allSales)}</b></td></tr></tbody></table>
-      <div class="row no-print" style="margin-top:11px"><button class="btn ghost" onclick="window.print()">賞金・収支を印刷</button></div>
+    <div class="card"><h2>1人ずつの口数と的中 <small>予想にお金はかかりません</small></h2>
+      <table><thead><tr><th style="min-width:10.5em">氏名</th><th class="n">馬券</th><th class="n">的中</th>
+        <th class="n">GTO</th><th class="n">的中</th></tr></thead><tbody>
+      ${L.map(x=>`<tr class="zebra"><td>${esc(x.n)}</td><td class="n">${x.ku}口</td><td class="n">${x.kw?x.kw+"口":"—"}</td>
+        <td class="n">${x.gu}口</td><td class="n">${x.gw?x.gw+"口":"—"}</td></tr>`).join("")||
+        '<tr><td colspan="5">—</td></tr>'}
+      <tr><td><b>合計</b></td><td class="n"><b>${K.allUnits}口</b></td><td class="n"><b>${K.win}口</b></td>
+        <td class="n"><b>${G.allUnits}口</b></td><td class="n"><b>${G.win}口</b></td></tr></tbody></table>
+      <div class="row no-print" style="margin-top:11px"><button class="btn ghost" onclick="window.print()">集計を印刷</button></div>
     </div>
   </div>`;
 }
@@ -5259,47 +5205,65 @@ function prizeSet(key,hole,k,v){
 }
 
 /* ---- 賞金・収支 ---- */
-function pzEdit(i,k,v){PZ().rank[i][k]=(k==="amt"||k==="n")?(+v||0):v;touch();render();}
-function pzAdd(){PZ().rank.push({label:"賞",kind:"rank",n:1,amt:1000});touch();render();}
+function pzEdit(i,k,v){PZ().rank[i][k]=(k==="n")?(+v||0):v;touch();render();}
+/* 技能賞・団体賞・ラッキー賞・バーディー賞の賞品（品名と出どころ）。金額は持たない（原則 R3） */
+function giftSet(key,k,v){giftOf(key)[k]=v;touch();render();}
+/* 賞品の入力欄（品名と出どころ）。順位賞は pzEdit、それ以外は giftSet に渡す */
+const itemCells=(o,on)=>`<td><input value="${esc(o.item||"")}" placeholder="品名（例：ボール1ダース）"
+    onchange="${on}('item',this.value)"></td>
+  <td><select onchange="${on}('src',this.value)">${SRC.map(([v,l])=>`<option value="${v}" ${(o.src||"host")===v?"selected":""}>${l}</option>`).join("")}</select></td>`;
+function pzAdd(){PZ().rank.push({label:"賞",kind:"rank",n:1,item:"",src:"host"});touch();render();}
 function pzSkip(){
   const el=document.getElementById("skipN"),step=Math.max(2,+((el&&el.value)||5));
   const max=RUN().length||18,have=new Set(PZ().rank.filter(r=>r.kind==="rank").map(r=>+r.n));
   let add=0;
   for(let k=step;k<=max;k+=step){ if(have.has(k))continue;
-    PZ().rank.push({label:k+"位",kind:"rank",n:k,amt:1000});add++; }
+    PZ().rank.push({label:k+"位",kind:"rank",n:k,item:"",src:"host"});add++; }
   PZ().rank.sort((a,b)=>(a.kind==="rank"?a.n:99)-(b.kind==="rank"?b.n:99));
   touch();render();
-  alert(add?add+"件の飛び賞を追加しました。金額を調整してください。":"追加するものがありませんでした。");
+  alert(add?add+"件の飛び賞を追加しました。賞品を決めてください。":"追加するものがありませんでした。");
 }
 /* 2026-09-20：「決め方」を知らないと作れない賞（下から数えて2＝ブービー等）を、
    ワンクリックで追加できるようにする。同じ名前の賞が既にあれば増やさない（pzSkipのnと同じ考え方） */
 const PZPRESET=[
-  {label:"猛打賞",           kind:"last",   n:1, amt:1000},
-  {label:"ブービー賞",       kind:"last",   n:2, amt:1000},
-  {label:"ブービーメーカー賞", kind:"last",   n:3, amt:1000},
-  {label:"ベストドレッサー賞", kind:"manual", amt:1000},
-  {label:"珍プレー賞",       kind:"manual", amt:1000}];
+  {label:"猛打賞",           kind:"last",   n:1, item:"", src:"host"},
+  {label:"ブービー賞",       kind:"last",   n:2, item:"", src:"host"},
+  {label:"ブービーメーカー賞", kind:"last",   n:3, item:"", src:"host"},
+  {label:"ベストドレッサー賞", kind:"manual", item:"", src:"host"},
+  {label:"珍プレー賞",       kind:"manual", item:"", src:"host"}];
 function pzPreset(){
   const have=new Set(PZ().rank.map(r=>r.label));
   const add=PZPRESET.filter(p=>!have.has(p.label));
   if(!add.length){alert("追加できるものがありません（同じ名前の賞が既にあります）。");return;}
   PZ().rank.push(...add.map(p=>({...p})));
   touch();render();
-  alert(add.length+"件のよくある賞を追加しました。金額と（手で指定の賞は）受賞者を決めてください。");
+  alert(add.length+"件のよくある賞を追加しました。賞品と（手で指定の賞は）受賞者を決めてください。");
 }
 function pzDel(i){PZ().rank.splice(i,1);touch();render();}
 function bgAdd(k){BG()[k].push({label:"",amt:0});touch();render();}
-function cAdd(label,mode){BG().collect.push({label:label||"",amt:0,mode:mode||"each"});touch();render();}
+function cAdd(label,mode,to,kind){const x={label:label||"",amt:0,mode:mode||"each",to:to||"play"};
+  if(kind) x.kind=kind; BG().collect.push(x);touch();render();}
 /* よくある項目。日帰りと宿泊ありで必要なものが変わる。
    ガソリン代・高速代は乗り合わせで総額が決まるので頭割り、
    宿泊代・プレー代はひとり同額。ここを間違えると集めすぎ・足りないが起きる */
-const CPRESET=[["プレー代","each"],["昼食代","each"],["パーティ・飲み物代","each"],
-               ["宿泊代","each"],["夕食・宴会代","each"],
-               ["車代（1台あたり）","unit"],["ガソリン代（1台あたり）","unit"],
-               ["高速代（1台あたり）","unit"],["貸切バス代（総額）","total"]];
+/* [項目名, 数え方, 誰から集めるか, 種類]。種類 prize＝賞品購入費（上限つき）、ops＝運営費（V1・M1） */
+const CPRESET=[["プレー代","each","play"],["昼食代","each","play"],["懇親会費","each","party"],
+               ["宿泊代","each","stay"],["夕食・宴会代","each","stay"],
+               ["車代（1台あたり）","unit","play"],["ガソリン代（1台あたり）","unit","play"],
+               ["高速代（1台あたり）","unit","play"],["貸切バス代（総額）","total","play"],
+               ["賞品購入費","each","play","prize"],["運営費（印刷・文具）","each","all","ops"]];
 function cDel(i){BG().collect.splice(i,1);touch();render();}
 function cEdit(i,k,v){const x=BG().collect[i];if(!x)return;
-  x[k]=(k==="amt")?(+v||0):v;touch();render();}
+  const old=x[k];
+  x[k]=(k==="amt")?(+v||0):v;
+  /* 賞品購入費は1人あたりの上限を超えさせない（SPEC-V1.md 3.3）。額・数え方・払う人のどれを変えても判定する */
+  const c=prizeCapOf();
+  if(x.kind==="prize"&&c!==null&&prizeEachOf()>c){ x[k]=old;
+    alert("賞品購入費は1人あたり "+yen(c)+"円までです（上限）。\n上限は「賞品購入費の上限」で決めます。"); render(); return; }
+  touch();render();}
+/* 賞品購入費の上限。空欄は「未入力」（既定値は弁護士の確認待ち） */
+function capSet(v){BG().prizeCap=(v===""?"":Math.max(0,+v||0));touch();render();}
+function leftSet(v){BG().leftover=(v==="return"?"return":"carry");touch();render();}
 function gSet(k,v){BG()[k]=+v||0;touch();render();}
 /* 車を出す人を大会設定から決められるようにする。
    参加者タブまで行かなくても、集金の画面でそのまま指定できる（2026-09-08） */
@@ -5324,169 +5288,119 @@ function carPick(){
    実際は賞金を出すためのお金で、プレー代とは別物。
    上から下へ「1人いくら → 全部でいくら → そこから何を出す → 残りいくら」と
    たどれる形にして、金額を決めながら妥当かどうかが分かるようにする（2026-09-08）。 */
-function prizeSourceCard(){
-  const mem=feeMembers(), per=+BG().fee||0, pool=feeTotal();
-  const P=prizeTotal(), R=prizeRows(), S=skillRows();
-  const rest=pool-P.all;
-  const back=mem.length?Math.round(P.all/mem.length):0;
-  const line=(l,v,sub)=>`<tr class="zebra"><td>${l}${sub?`<br><span
-    style="color:var(--ink-dim);font-size:12px">${sub}</span>`:""}</td>
-    <td class="n">${yen(v)}</td></tr>`;
-  return `<div class="card"><h2>賞金の原資 <small>プレー代とは別。賞金を出すためのお金です</small></h2>
-    <div class="row" style="align-items:flex-end">
-      <div class="f" style="max-width:220px"><label>ひとりから集める額（円）</label>
-        <input type="number" step="100" value="${per}"
-          onchange="BG().fee=+this.value||0;touch();render()"></div>
-      <div style="padding-bottom:10px;font-size:15px">
-        × 対象 <b>${mem.length}名</b> ＝ <b class="hi" style="font-size:19px">${yen(pool)}円</b></div>
-    </div>
-    <div class="hint">これは<b>賞金だけ</b>の金額です。プレー代・宿泊代・馬券の代金は含みません。
-      当日集める総額は下の「当日いくら集めるか」に出ます。<br>
-      対象や個別の金額は「参加者」タブで変えられます。</div>
-
-    <table style="margin-top:15px"><thead><tr>
-      <th style="min-width:16em">この原資から出す賞金</th>
-      <th class="n" style="min-width:7em">金額</th></tr></thead><tbody>
-      ${U("prize")?line("順位賞",P.rank,
-        R.length?R.map(r=>esc(r.label)+" "+yen(+r.amt||0)).join("　/　"):"設定なし"):""}
-      ${S.length?line("技能賞",P.skill,
-        S.map(r=>r.label+" "+r.n+"ホール × "+yen(r.unit)).join("　/　")):""}
-      ${U("birdie")?line("バーディー・イーグル",P.birdie,
-        "イーグル "+yen(+PZ().eagle||0)+"　/　バーディー "+yen(+PZ().birdie||0)):""}
-      ${U("team")?line("団体賞",P.team,yen(+PZ().team||0)+"円 × 上位"+(+TM().top||1)+"組"):""}
-      ${U("lucky")?line("ラッキー賞",P.lucky,yen(+PZ().lucky||0)+"円 × "+(+LK().count||0)+"名"):""}
-      <tr><td><b>賞金の合計</b></td><td class="n"><b>${yen(P.all)}</b></td></tr>
-      <tr><td><b>原資の残り</b><br><span style="color:var(--ink-dim);font-size:12px">
-        経費や次回への繰越に回せます</span></td>
-        <td class="n"><b style="color:${rest<0?"#e88":"var(--brass)"};font-size:17px">${yen(rest)}</b></td></tr>
-    </tbody></table>
-    ${rest<0?`<div class="msg ng" style="margin-top:11px">
-      <b>賞金が原資を ${yen(-rest)}円 上回っています。</b>
-      ひとりから集める額を上げるか、賞金を減らしてください。</div>`
-    :`<div class="msg ok" style="margin-top:11px">
-      ひとり <b>${yen(per)}円</b> 集めて、賞金として <b>${yen(back)}円</b> ぶんが戻る計算です
-      （${yen(P.all)}円 ÷ ${mem.length}名）。残り ${yen(rest)}円 は経費に回ります。<br>
-      <span style="color:var(--ink-dim)">実際に受け取る額は順位や技能賞で決まるので、
-      ここは「集めた額のうち、どれだけを賞金に回しているか」の目安です。</span></div>`}
-  </div>`;
-}
 /* 当日いくら集めるかの画面。大会設定と賞金・収支の両方に出す */
 function collectCard(edit){
-  const C=collectPlan(),b=BG();
+  /* V1（M1）：集めるのは経費だけ（原則 R1）。項目ごとに「誰から集めるか」を持つ。
+     予想ゲームの代金・賞金の原資は無いので、スコアも投票もまだ無い段階で1人ずつの額が確定する */
+  const C=collectPlan(),b=BG(),cap=prizeCapOf();
+  const toSel=(x,i)=>`<select onchange="cEdit(${i},'to',this.value)" aria-label="誰から集めるか">
+    ${PAYTO.map(([v,l])=>`<option value="${v}" ${(x.to||"play")===v?"selected":""}>${l}</option>`).join("")}</select>`;
   const list=(b.collect||[]).map((x,i)=>edit
-    ? `<tr class="zebra"><td><input value="${esc(x.label)}" placeholder="項目名（プレー代・宿泊代など）"
-        onchange="cEdit(${i},'label',this.value)"></td>
+    ? `<tr class="zebra"><td><input value="${esc(x.label)}" placeholder="項目名（プレー代・懇親会費など）"
+        onchange="cEdit(${i},'label',this.value)">
+        ${x.kind==="prize"?'<div style="font-size:11px;color:var(--brass);margin-top:3px">賞品購入費</div>'
+          :x.kind==="ops"?'<div style="font-size:11px;color:var(--ink-dim);margin-top:3px">運営費</div>':""}</td>
        <td class="c"><select onchange="cEdit(${i},'mode',this.value)">
          <option value="each" ${(x.mode||"each")==="each"?"selected":""}>ひとり</option>
          <option value="unit" ${x.mode==="unit"?"selected":""}>1台あたり</option>
          <option value="total" ${x.mode==="total"?"selected":""}>総額を頭割り</option></select>
          ${x.mode==="unit"?`<div style="font-size:11px;color:${carCount()?"var(--ink-dim)":"#e88"};margin-top:3px">
            ${carCount()?carCount()+"台":"台数 未入力"}</div>`:""}</td>
+       <td class="c">${toSel(x,i)}<div style="font-size:11px;color:var(--ink-dim);margin-top:3px">${payersOf(x).length}名</div></td>
        <td class="n"><input class="q" style="width:96px" type="number" step="100" value="${x.amt}"
         onchange="cEdit(${i},'amt',this.value)"></td>
        <td class="c"><button class="del" onclick="cDel(${i})">×</button></td></tr>`
     : "").join("");
-  return `<div class="card"><h2>当日いくら集めるか
-      <small>${C.actual?"投票が入っているので実際の口数で出しています":"予想ゲームは見込みの口数で見積もっています"}</small></h2>
-    <div class="hint">プレー代は幹事が預かってゴルフ場へ払うぶんです。賞金の原資とは別に数えます。<br>
-      <b>ここを先に決めておけば、当日の朝に「ひとり ◯◯円」と言えます。</b></div>
-    ${edit?`<table style="margin-top:11px"><thead><tr><th style="min-width:12em">実費（預かり）</th>
-      <th class="c" style="min-width:10.5em">数え方</th>
+  const pi=prizeItems(), pIssue=prizeCapIssue();
+  return `<div class="card" id="sec-budget-c"><h2>当日いくら集めるか
+      <small>経費だけ。成績や予想では変わりません</small></h2>
+    <div class="hint">プレー代・懇親会費などは、幹事が預かってそのまま支払い先へ払うぶんです。<br>
+      <b>ここを決めておけば、前の晩までに1人ずつの額を知らせられます。</b>予想ゲームにお金はかかりません。</div>
+    ${edit?`<table style="margin-top:11px" class="hscroll"><thead><tr><th style="min-width:12em">経費の項目</th>
+      <th class="c" style="min-width:10.5em">数え方</th><th class="c" style="min-width:10em">誰から集めるか</th>
       <th class="n" style="min-width:7em">金額</th><th class="c" style="width:40px"></th></tr></thead>
-      <tbody>${list||'<tr><td colspan="4" style="color:var(--ink-dim)">下のボタンから項目を足してください</td></tr>'}</tbody></table>`:""}
+      <tbody>${list||'<tr><td colspan="5" style="color:var(--ink-dim)">下のボタンから項目を足してください</td></tr>'}</tbody></table>`:""}
     ${edit?`<div class="hint" style="margin-top:9px">
-      <b>ひとり</b>…全員が同じ額を払うもの（プレー代・宿泊代）。<br>
-      <b>1台あたり</b>…車代・ガソリン代。<b>単価 × 台数を全員から集め、配車した担当へ返します。</b>
+      <b>ひとり</b>…払う人が同じ額を払うもの（プレー代・懇親会費・宿泊代）。<br>
+      <b>1台あたり</b>…車代・ガソリン代。<b>単価 × 台数を払う人から集め、配車した担当へ返します。</b>
       台数は「参加者」タブで、出す方の欄に入れてください。<br>
       <b>総額を頭割り</b>…貸切バス代のように、総額が先に決まっているもの。<br>
+      <b>誰から集めるか</b>…「懇親会に出る人」「宿泊する人」を選ぶと、参加者タブにその欄が出ます。<br>
       割り切れないときは切り上げます。足りないと幹事の持ち出しになるためです。</div>
     <div class="row no-print" style="margin-top:9px;flex-wrap:wrap;gap:6px">
-      ${CPRESET.map(([l,m])=>`<button class="btn ghost" style="font-size:12px;padding:7px 11px"
-        onclick="cAdd('${esc(l)}','${m}')">＋ ${esc(l)}</button>`).join("")}
+      ${CPRESET.map(([l,m,t,k])=>`<button class="btn ghost" style="font-size:12px;padding:7px 11px"
+        onclick="cAdd('${esc(l)}','${m}','${t||"play"}','${k||""}')">＋ ${esc(l)}</button>`).join("")}
       <button class="btn ghost" style="font-size:12px;padding:7px 11px" onclick="cAdd()">＋ 自分で入力</button>
     </div>`:""}
+    ${edit&&pi.length?`<div class="row" style="margin-top:13px;align-items:flex-end">
+      <div class="f" style="max-width:240px"><label>賞品購入費の上限（1人あたり・円）</label>
+        <input type="number" step="100" min="0" value="${cap===null?"":cap}" placeholder="未入力"
+          onchange="capSet(this.value)"></div>
+      <span class="hint">いまは1人あたり <b>${yen(prizeEachOf())}円</b>。参加費で賞品を買うときの上限です。
+        上限を超える額は入れられません。<b>上限の額は、弁護士に確認してから決めてください</b>（SPEC-V1.md の U1）。</span></div>
+      ${pIssue?`<div class="msg ng" style="margin-top:9px">${esc(pIssue)}</div>`:""}`:""}
     ${edit&&(b.collect||[]).some(x=>x.mode==="unit")?`<div style="margin-top:13px">
       <div style="font-weight:700;color:var(--brass);font-size:13px">車を出す方</div>
-      <div class="hint">単価 ${yen(carUnitSum())}円 × 台数を全員から集め、出した方へそのままお返しします。
+      <div class="hint">単価 ${yen(carUnitSum())}円 × 台数を払う人から集め、出した方へそのままお返しします。
         「参加者」タブでも同じ欄が編集できます。</div>
       ${carPick()}</div>`:""}
     ${edit?`<div class="row" style="margin-top:13px;align-items:flex-end">
-      <div class="f" style="max-width:240px"><label>徴収額の丸め</label>
+      <div class="f" style="max-width:240px"><label>支払額の丸め</label>
         <select onchange="gSet('roundUnit',this.value)">
           <option value="0" ${!roundUnit()?"selected":""}>丸めない</option>
           <option value="500" ${roundUnit()===500?"selected":""}>500円単位に切り上げ</option>
           <option value="1000" ${roundUnit()===1000?"selected":""}>1,000円単位に切り上げ</option>
         </select></div>
-      <span class="hint">当日の集金でお釣りを減らすための設定です。
-        <b>切り上げたぶんは幹事の取り分ではなく、繰越金として積みます。</b></span></div>`:""}
-    ${edit&&(U("keiba")||U("gto"))?`<div class="row" style="margin-top:11px">
-      ${U("keiba")?`<div class="f"><label>馬券の見込み（ひとり何口）</label>
-        <input type="number" min="0" value="${b.kGuess}" onchange="gSet('kGuess',this.value)"></div>`:""}
-      ${U("gto")?`<div class="f"><label>GTOの見込み（ひとり何口）</label>
-        <input type="number" min="0" value="${b.gGuess}" onchange="gSet('gGuess',this.value)"></div>`:""}
-      <span class="hint">実際に投票が入ると、見込みではなく本当の口数で出します。</span></div>`:""}
+      <div class="f" style="max-width:240px"><label>経費が余ったら</label>
+        <select onchange="leftSet(this.value)">
+          <option value="carry" ${b.leftover!=="return"?"selected":""}>繰越金にする</option>
+          <option value="return" ${b.leftover==="return"?"selected":""}>全員に均等に返す</option>
+        </select></div>
+      <span class="hint">丸めはお釣りを減らすための設定です。
+        <b>切り上げたぶんも余りも幹事の取り分ではなく、成績による差もつけません。</b></span></div>`:""}
     <table style="margin-top:15px" class="hscroll"><thead><tr>
-      <th style="min-width:16em">内訳</th><th class="n" style="min-width:7em">ひとり</th>
-      <th class="n" style="min-width:8em">合計</th></tr></thead><tbody>
-      <tr><td colspan="3" style="background:rgba(22,56,40,.5);font-weight:700;color:var(--brass)">
-        一律　全員が同じ額（プレーする ${C.members}名）</td></tr>
+      <th style="min-width:16em">内訳</th><th class="n" style="min-width:6em">払う人</th>
+      <th class="n" style="min-width:7em">ひとり</th><th class="n" style="min-width:8em">合計</th></tr></thead><tbody>
       ${edit
-        ? (C.flatRows.length
-            ? `<tr class="zebra"><td style="color:var(--ink-dim)">上の表で決めた実費 ${C.flatRows.length-(C.fee?1:0)}項目
-                ${C.fee?"＋ 賞金の原資":""}</td>
-               <td class="n" style="color:var(--ink-dim)">—</td>
+        /* 大会設定ではすぐ上に入力表があるので、明細は畳んで項目数だけ出す（同じ内容を二度出さない。2026-09-08の決まり） */
+        ? (C.rows.length
+            ? `<tr class="zebra"><td style="color:var(--ink-dim)">上の表で決めた経費 ${C.rows.length}項目</td>
+               <td class="n" style="color:var(--ink-dim)">—</td><td class="n" style="color:var(--ink-dim)">—</td>
                <td class="n" style="color:var(--ink-dim)">—</td></tr>`
-            : '<tr><td colspan="3" style="color:var(--ink-dim)">まだ設定されていません</td></tr>')
-        : (C.flatRows.map(r=>`<tr class="zebra"><td>${esc(r.l)}</td>
-            <td class="n">${yen(r.v)}</td><td class="n" style="color:var(--ink-dim)">${yen(r.v*C.members)}</td></tr>`).join("")
-            ||'<tr><td colspan="3" style="color:var(--ink-dim)">まだ設定されていません</td></tr>')}
-      <tr><td><b>一律の小計</b></td><td class="n"><b>${yen(C.flat)}</b></td>
-        <td class="n"><b>${yen(C.flatTotal)}</b></td></tr>
-      <tr><td colspan="3" style="background:rgba(22,56,40,.5);font-weight:700;color:var(--brass)">
-        個別　人によって違う（投票する ${C.voters}名）</td></tr>
-      ${U("keiba")?`<tr class="zebra"><td>馬券　${C.actual?C.kUnits+"口":"見込み ひとり"+(+BG().kGuess||0)+"口"}
-        × ${yen(+DB.meta.kPrice||0)}円</td>
-        <td class="n" style="color:var(--ink-dim)">平均 ${yen(C.kEach)}</td>
-        <td class="n">${yen(C.kMoney)}</td></tr>`:""}
-      ${U("gto")?`<tr class="zebra"><td>GTO　${C.actual?C.gUnits+"口":"見込み ひとり"+(+BG().gGuess||0)+"口"}
-        × ${yen(+DB.meta.gPrice||0)}円</td>
-        <td class="n" style="color:var(--ink-dim)">平均 ${yen(C.gEach)}</td>
-        <td class="n">${yen(C.gMoney)}</td></tr>`:""}
-      <tr><td><b>個別の小計</b></td><td class="n" style="color:var(--ink-dim)">—</td>
-        <td class="n"><b>${yen(C.gameTotal)}</b></td></tr>
-      <tr><td><b>徴収合計</b></td>
-        <td class="n" style="color:var(--ink-dim)">—</td>
+            : '<tr><td colspan="4" style="color:var(--ink-dim)">まだ設定されていません</td></tr>')
+        : (C.rows.map(r=>`<tr class="zebra"><td>${esc(r.l)}<br><span style="color:var(--ink-dim);font-size:12px">${
+          esc((PAYTO.find(t=>t[0]===r.to)||PAYTO[0])[1])}から</span></td>
+          <td class="n">${r.payers}名</td><td class="n">${yen(r.v)}</td>
+          <td class="n" style="color:var(--ink-dim)">${yen(r.v*r.payers)}</td></tr>`).join("")
+          ||'<tr><td colspan="4" style="color:var(--ink-dim)">まだ設定されていません</td></tr>')}
+      <tr><td><b>集める総額</b><br><span style="color:var(--ink-dim);font-size:12px">キャンセル料・切り上げを含む</span></td>
+        <td class="n" style="color:var(--ink-dim)">—</td><td class="n" style="color:var(--ink-dim)">—</td>
         <td class="n"><b class="hi" style="font-size:18px">${yen(C.grand)}円</b></td></tr>
-      ${C.unit?`<tr><td colspan="3" style="background:rgba(22,56,40,.5);font-weight:700;color:var(--brass)">
+      ${C.unit?`<tr><td colspan="4" style="background:rgba(22,56,40,.5);font-weight:700;color:var(--brass)">
           ${yen(C.unit)}円単位に切り上げ</td></tr>
-        <tr><td>ひとりの目安（一律＋平均の個別）</td>
+        <tr><td>プレーして懇親会にも出る方の目安</td><td></td>
           <td class="n">${yen(C.each)}</td><td class="n" style="color:var(--ink-dim)">—</td></tr>
-        <tr><td><b>切り上げ後</b></td>
+        <tr><td><b>切り上げ後</b></td><td></td>
           <td class="n"><b class="hi" style="font-size:17px">${yen(C.eachRounded)}</b></td>
-          <td class="n" style="color:var(--ink-dim)">—</td></tr>
-        <tr><td>ひとりの切り上げぶん</td>
-          <td class="n">${yen(C.roundEach)}</td>
-          <td class="n">約 ${yen(C.roundEach*C.members)} が繰越金へ</td></tr>`:""}
+          <td class="n" style="color:var(--ink-dim)">—</td></tr>`:""}
     </tbody></table>
     ${(()=>{const u=(b.collect||[]).filter(x=>x.mode==="unit");
       if(!u.length) return "";
       const noAmt=u.filter(x=>!+x.amt), noCar=carCount()===0;
       if(!noAmt.length&&!noCar) return "";
       const msg=[];
-      if(noAmt.length) msg.push("<b>"+noAmt.map(x=>esc(x.label||"実費")).join("・")
+      if(noAmt.length) msg.push("<b>"+noAmt.map(x=>esc(x.label||"経費")).join("・")
         +"</b> の<b>1台あたりの金額</b>がまだ入っていません。上の表に入れてください。");
       if(noCar) msg.push("<b>車を出す方</b>がまだ選ばれていません。下の「車を出す方」で、"
         +"出す方にチェックを入れてください（1人1台で数えます）。");
       return `<div class="msg ng" style="margin-top:11px">
         ${msg.join("<br>")}<br>
-        <span style="color:var(--ink-dim)">単価 × 台数を全員から集め、出した方へそのままお返しします。
+        <span style="color:var(--ink-dim)">単価 × 台数を払う人から集め、出した方へそのままお返しします。
         どちらかが空だと0円のままになります。</span></div>`;})()}
     <div class="hint" style="margin-top:11px">
-      <b>当日の朝に集めるのは「一律 ${yen(C.flat)}円」まで</b>です。
-      馬券とGTOは買った口数で人ごとに違うので、投票を締め切ってから足してください。
-      ひとりずつの金額は「集金」画面の集金表に出ます。</div>
+      1人ずつの支払額は「集金」画面に出ます。<b>結果を待たずに集金を締められます。</b></div>
     ${C.over?`<div class="hint" style="margin-top:7px">頭割りの切り上げで
-      <b>${yen(C.over)}円</b>だけ多めに集まります。余りは経費に回してください。</div>`:""}</div>`;
+      <b>${yen(C.over)}円</b>だけ多めに集まります。${b.leftover==="return"?"余りは全員に均等に返します。":"余りは繰越金にします。"}</div>`:""}</div>`;
 }
 function bgEdit(k,i,f,v){BG()[k][i][f]=(f==="amt")?(+v||0):v;touch();render();}
 function bgDel(k,i){BG()[k].splice(i,1);touch();render();}
@@ -5558,19 +5472,17 @@ function payCards(T){
   const L=PAYONLY?T.filter(x=>x.pend):T;
   /* 項目の途中で改行されないよう、1項目ずつ nowrap で包む */
   const nw=a=>a.filter(Boolean).map(t=>`<span class="nw">${t}</span>`).join("・");
-  const brk=x=>nw([x.play?"実費 "+yen(x.play):"",x.fee?"原資 "+yen(x.fee):"",
-    x.kq?"馬券 "+x.kq+"口":"",x.gq?"GTO "+x.gq+"口":"",x.roundUp?"切り上げ +"+yen(x.roundUp):""])||"—";
-  const back=x=>nw([x.pz?"賞金 "+yen(x.pz):"",x.back?"払戻 "+yen(x.back):"",
-    x.carBack?"車 "+yen(x.carBack):"",x.fine?"罰金 −"+yen(x.fine):""]);
+  /* V1（M1）：内訳は経費・キャンセル料・切り上げだけ。予想の口数・賞金・払戻・罰金・お渡しは出さない（原則 R1） */
+  const brk=x=>nw([x.play?"経費 "+yen(x.play):"",x.cancel?"キャンセル料 "+yen(x.cancel):"",
+    x.roundUp?"切り上げ +"+yen(x.roundUp):""])||"—";
   return `<div class="pay-cards">
     ${L.map(x=>x.got&&x.diff?payDifCard(x):`<button type="button" class="pay-c${x.got?" got":""}" role="checkbox" aria-checked="${x.got}"
       onclick="payToggle('${esc(x.n)}',${!x.got})">
       <span class="pay-ck" aria-hidden="true">${x.got?"✓":""}</span>
       <span class="pay-m">
-        <span class="pay-h"><b>${esc(x.n)}</b>${(+x.p.f>0)?"":' <span class="pill">投票のみ</span>'}${
-          (+x.p.f>0&&x.fee===0)?' <span class="pill">会費なし</span>':""}</span>
+        <span class="pay-h"><b>${esc(x.n)}</b>${(+x.p.f>0)?"":' <span class="pill">予想のみ</span>'}</span>
         <span class="pay-d">${brk(x)}</span>
-        ${back(x)?`<span class="pay-d">精算：${back(x)} → <span class="nw">お渡し <b>${yen(x.net)}円</b></span></span>`:""}
+        ${x.carBack?`<span class="pay-d">車を出した方へ：<span class="nw">車の返金 <b>${yen(x.carBack)}円</b></span></span>`:""}
       </span>
       <span class="pay-y"><b>${yen(x.bill)}</b>${x.got?'<span class="pay-ok">受け取り済</span>':"<small>円</small>"}</span>
     </button>`).join("")||'<div class="hint">未集金の方はいません。</div>'}
@@ -5599,7 +5511,9 @@ function payDifCard(x){
     </button>`;
 }
 function vMoney(){
-  const P=prizeTotal(),R=prizeRows(),S=skillRows(),Bd=budget(),T=settle();
+  /* V1（M1）：賞は品物（品名と出どころ）。賞ごとの金額・賞金の合計は持たない（原則 R3）。
+     収支は経費だけ（原則 R1）。賞品と経費を同じ表に入れない（原則 R4） */
+  const R=prizeRows(),S=skillRows(),Bd=budget(),T=settle();
   const KINDS=[["rank","順位"],["last","下から数えて"],["best","ベスグロ"],
     ["oldest","最年長"],["youngest","最年少"],["bestOut","ベストOUT"],["bestIn","ベストIN"],
     ["bigWave","大波（前後半の差が最大）"],["smallWave","小波（前後半の差が最小）"],
@@ -5611,19 +5525,18 @@ function vMoney(){
         DB.players.map(p=>`<option ${nz(p.n)===nz(r.who)?"selected":""}>${esc(p.n)}</option>`).join("")}</select>`
     : (r.who?esc(r.who):'<span style="color:var(--ink-dim)">—</span>');
   pane.innerHTML=`
-  ${U("prize")?`<div class="card"><h2>順位賞 <small>受賞者は順位から自動で入ります</small></h2>
+  ${U("prize")?`<div class="card"><h2>順位賞 <small>受賞者は順位から自動で入ります。賞は品物で、金額は持ちません</small></h2>
     <table><thead><tr><th style="min-width:7.5em">賞の名前</th><th style="min-width:9em">決め方</th>
       <th class="c" style="width:70px">位</th><th style="min-width:11.5em">受賞者</th>
-      <th class="n" style="width:110px">賞金</th><th class="c" style="width:40px"></th></tr></thead><tbody>
+      <th style="min-width:11em">賞品</th><th style="min-width:9em">出どころ</th><th class="c" style="width:40px"></th></tr></thead><tbody>
     ${R.map(r=>`<tr class="zebra">
       <td><input value="${esc(r.label)}" onchange="pzEdit(${r.i},'label',this.value)"></td>
       <td><select onchange="pzEdit(${r.i},'kind',this.value)">${kindOpt(r)}</select></td>
       <td class="c">${r.kind==="rank"||r.kind==="last"
         ?`<input class="q" type="number" min="1" value="${r.n}" onchange="pzEdit(${r.i},'n',this.value)">`:"—"}</td>
       <td>${who(r)}</td>
-      <td class="n"><input class="q" style="width:88px" type="number" step="100" value="${r.amt}" onchange="pzEdit(${r.i},'amt',this.value)"></td>
+      ${itemCells(r,"((k,v)=>pzEdit("+r.i+",k,v))")}
       <td class="c"><button class="del" onclick="pzDel(${r.i})">×</button></td></tr>`).join("")}
-    <tr><td colspan="4"><b>小計</b></td><td class="n"><b>${yen(P.rank)}</b></td><td></td></tr>
     </tbody></table>
     <div class="row" style="margin-top:11px"><button class="btn" onclick="pzAdd()">＋ 賞を追加</button>
       <div class="f"><label>飛び賞をまとめて追加</label>
@@ -5642,8 +5555,10 @@ function vMoney(){
         <input type="number" min="0" max="20" value="${TM().size}" onchange="DB.meta.team.size=+this.value||0;touch();render()"></div>
       <div class="f"><label>表彰するチーム数</label>
         <input type="number" min="1" max="9" value="${TM().top}" onchange="DB.meta.team.top=+this.value||1;touch();render()"></div>
-      <div class="f"><label>1チームあたりの賞金</label>
-        <input type="number" step="100" value="${PZ().team}" onchange="PZ().team=+this.value||0;touch();render()"></div>
+      <div class="f"><label>団体賞の賞品</label>
+        <input value="${esc(giftOf("team").item||"")}" placeholder="品名" onchange="giftSet('team','item',this.value)"></div>
+      <div class="f"><label>出どころ</label><select onchange="giftSet('team','src',this.value)">${
+        SRC.map(([v,l])=>`<option value="${v}" ${giftOf("team").src===v?"selected":""}>${l}</option>`).join("")}</select></div>
       <span class="hint">0名にすると全員のネットで計算します。人数が足りないチームは対象外です。</span>
     </div>
     <table><thead><tr><th class="c" style="width:56px">順位</th><th>チーム（所属）</th>
@@ -5661,57 +5576,44 @@ function vMoney(){
     <div class="row">
       <div class="f"><label>当選人数</label>
         <input type="number" min="1" max="20" value="${LK().count}" onchange="DB.meta.lucky.count=+this.value||1;touch();render()"></div>
-      <div class="f"><label>1名あたりの賞金</label>
-        <input type="number" step="100" value="${PZ().lucky}" onchange="PZ().lucky=+this.value||0;touch();render()"></div>
+      <div class="f"><label>ラッキー賞の賞品</label>
+        <input value="${esc(giftOf("lucky").item||"")}" placeholder="品名" onchange="giftSet('lucky','item',this.value)"></div>
+      <div class="f"><label>出どころ</label><select onchange="giftSet('lucky','src',this.value)">${
+        SRC.map(([v,l])=>`<option value="${v}" ${giftOf("lucky").src===v?"selected":""}>${l}</option>`).join("")}</select></div>
       <label class="mod ${LK().exclude?"on":""}"><input type="checkbox" ${LK().exclude?"checked":""}
         onchange="DB.meta.lucky.exclude=this.checked;touch();render()"><span>すでに受賞した方を除く</span></label>
       <button class="btn primary" onclick="drawLucky()">抽選する</button>
       <span class="hint">対象 ${luckyPool().length}名。当日は発表画面の演出でも抽選できます。</span>
     </div>
     ${(DB.result.lucky||[]).length?`<div class="msg ok">当選　${DB.result.lucky.map(esc).join("　")}
-      （各 ${yen(PZ().lucky)}円）</div>`:'<div class="hint">まだ抽選していません。</div>'}
+      （${esc(itemText(giftOf("lucky")))}）</div>`:'<div class="hint">まだ抽選していません。</div>'}
   </div>`:""}
   <div class="card"><h2>技能賞</h2>
     <table><thead><tr><th style="min-width:10em">賞</th><th>対象ホール</th>
-      <th class="n" style="width:100px">1つあたり</th><th class="c" style="width:60px">件数</th>
-      <th class="n" style="width:110px">計</th></tr></thead><tbody>
+      <th style="min-width:11em">賞品（1つごと）</th><th style="min-width:9em">出どころ</th><th class="c" style="width:60px">件数</th></tr></thead><tbody>
     ${S.map(r=>`<tr class="zebra"><td>${r.label}</td>
       <td style="font-family:var(--num)">${r.holes.join(", ")||"—"}</td>
-      <td class="n"><input class="q" style="width:84px" type="number" step="100" value="${r.unit}"
-        onchange="PZ()['${r.key}']=+this.value||0;touch();render()"></td>
-      <td class="c">${r.n}</td><td class="n">${yen(r.total)}</td></tr>`).join("")||
+      ${itemCells(r.gift,"((k,v)=>giftSet('"+r.key+"',k,v))")}
+      <td class="c">${r.n}</td></tr>`).join("")||
       '<tr><td colspan="5">技能賞は使わない設定です。使うときは「大会設定」で選んでください。</td></tr>'}
-    <tr><td colspan="4"><b>小計</b></td><td class="n"><b>${yen(P.skill)}</b></td></tr>
     </tbody></table>
     ${S.map(r=>r.list.length?`<div class="hint" style="margin-top:8px"><b>${r.label}</b>　${
       r.list.map(x=>x.h+"H "+(x.who?esc(x.who)+(x.rec?"（"+esc(x.rec)+"）":""):"未定")).join("　")}</div>`:"").join("")}
-    <div class="stat-row"><div>順位賞<b>${yen(P.rank)}円</b></div><div>技能賞<b>${yen(P.skill)}円</b></div>
-      ${U("birdie")?`<div>バーディー・イーグル<b>${yen(P.birdie)}円</b></div>`:""}
-      ${U("team")?`<div>団体賞<b>${yen(P.team)}円</b></div>`:""}
-      ${U("lucky")?`<div>ラッキー賞<b>${yen(P.lucky)}円</b></div>`:""}
-      <div>賞金 合計<b class="hi">${yen(P.all)}円</b></div></div>
+    <div class="hint" style="margin-top:9px">主催者が買う賞品の費用は、経費の「賞品購入費」でまとめて集めます（1人あたりの上限つき）。
+      賞ごとの金額は記録しません。</div>
   </div>`:""}
   ${U("birdie")?(()=>{const BR=birdieRows(),eg=BR.filter(x=>x.label==="イーグル"),bd=BR.filter(x=>x.label==="バーディー");
     return `<div class="card"><h2>バーディー・イーグル賞 <small>18ホールの内訳から自動判定・対象ホールの指定は不要</small></h2>
     <table><thead><tr><th style="min-width:10em">賞</th>
-      <th class="n" style="width:100px">1つあたり</th><th class="c" style="width:60px">件数</th>
-      <th class="n" style="width:110px">計</th></tr></thead><tbody>
-    <tr class="zebra"><td>イーグル</td>
-      <td class="n"><input class="q" style="width:84px" type="number" step="100" value="${+PZ().eagle||0}"
-        onchange="PZ().eagle=+this.value||0;touch();render()"></td>
-      <td class="c">${eg.length}</td><td class="n">${yen(eg.length*(+PZ().eagle||0))}</td></tr>
-    <tr class="zebra"><td>バーディー</td>
-      <td class="n"><input class="q" style="width:84px" type="number" step="100" value="${+PZ().birdie||0}"
-        onchange="PZ().birdie=+this.value||0;touch();render()"></td>
-      <td class="c">${bd.length}</td><td class="n">${yen(bd.length*(+PZ().birdie||0))}</td></tr>
-    <tr><td colspan="3"><b>小計</b></td><td class="n"><b>${yen(P.birdie)}</b></td></tr>
+      <th style="min-width:11em">賞品（1つごと）</th><th style="min-width:9em">出どころ</th><th class="c" style="width:60px">件数</th></tr></thead><tbody>
+    <tr class="zebra"><td>イーグル</td>${itemCells(giftOf("eagle"),"((k,v)=>giftSet('eagle',k,v))")}<td class="c">${eg.length}</td></tr>
+    <tr class="zebra"><td>バーディー</td>${itemCells(giftOf("birdie"),"((k,v)=>giftSet('birdie',k,v))")}<td class="c">${bd.length}</td></tr>
     </tbody></table>
     ${Array.isArray(SC().par)&&SC().par.length===18?"":'<div class="hint">18ホールの内訳（各ホールのスコア）が無いと自動判定できません。</div>'}
   </div>`;})():""}
-  ${U("budget")?`<div class="card"><h2>収支</h2>
-    <div class="hint">賞金の原資は <b>ひとり ${yen(BG().fee)}円 × ${feeMembers().length}名 ＝ ${yen(feeTotal())}円</b>。
-      金額は「大会設定」の<b>「賞金の原資」</b>で変えられます。
-      ${DB.players.length-feeMembers().length?"予想だけの参加など "+(DB.players.length-feeMembers().length)+"名は対象外です。":""}</div>
+  ${U("budget")?`<div class="card"><h2>収支 <small>経費の預かりと支払いだけ</small></h2>
+    <div class="hint">集めたお金は経費として預かり、そのまま支払い先へ払います。<b>成績や予想でお金は動きません。</b>
+      経費の項目と額は「大会設定」の<b>「当日集める額（経費）」</b>で変えられます。</div>
     ${collectCard(false)}
     <div class="grid2">
       <div><table><thead><tr><th>収入</th><th class="n" style="width:120px">金額</th><th class="c" style="width:40px"></th></tr></thead><tbody>
@@ -5735,7 +5637,10 @@ function vMoney(){
     </div>
     <div class="stat-row"><div>収入<b>${yen(Bd.income)}円</b></div><div>支出<b>${yen(Bd.expense)}円</b></div>
       <div>差引<b class="${Bd.diff<0?"warn":"hi"}">${Bd.diff<0?"▲":""}${yen(Math.abs(Bd.diff))}円</b></div></div>
-    ${Bd.diff<0?'<div class="msg warn">支出が収入を上回っています。会費または賞金を見直してください。</div>':""}
+    ${Bd.diff<0?'<div class="msg warn">支出が収入を上回っています。経費の額を見直してください。</div>':""}
+    ${Bd.diff>0?`<div class="hint">余り ${yen(Bd.diff)}円は、${BG().leftover==="return"
+      ?`<b>全員に均等に返します</b>（${DB.players.length}名で割ると1人あたり ${yen(Math.floor(Bd.diff/(DB.players.length||1)))}円。端数は繰越金へ）。`
+      :"<b>繰越金</b>にします（大会設定の「経費が余ったら」で変えられます）。"}</div>`:""}
   </div>
 `:""}`;
 }
@@ -5755,9 +5660,7 @@ function vResult(){
       <div class="f"><label>枠</label><select id="r_fb">${F.map(f=>`<option ${String(f)===fb?"selected":""}>${f}</option>`).join("")}</select></div>`}
       <span class="hint">${uma?"上位2名の組み合わせが、そのまま馬連の的中判定に使われます。":"氏名を選ぶと枠が自動で入ります。ゾロ目も的中として成立します。"}</span>
     </div>
-    <div class="stat-row"><div>売上金<b>${yen(K.sales)}円</b></div><div>的中口数<b>${K.win}</b></div>
-      <div>配当金<b class="hi">${K.win?yen(K.pay)+"円／口":"—"}</b></div>
-      <div>残金<b>${yen(K.left)}円</b></div></div>
+    <div class="stat-row"><div>口数<b>${K.units}</b></div><div>的中口数<b class="hi">${K.win}</b></div></div>
     ${K.win?`<div class="hint">的中者：${K.winners.map(w=>esc(w.n)+" "+w.c+"口").join("　")}</div>`:""}
   </div>`:""}
   ${U("gto")?`<div class="card"><h2>② GTO <small>方式：${DB.meta.gMode}（大会設定で変更）</small></h2>
@@ -5766,14 +5669,11 @@ function vResult(){
       <div class="f"><label>下位2位</label><select id="r_l2" style="min-width:145px">${opt(DB.result.low[1])}</select></div>
       <div class="f"><label>下位3位</label><select id="r_l3" style="min-width:145px">${opt(DB.result.low[2])}</select></div>
     </div>
-    <div class="stat-row"><div>売上金<b>${yen(G.sales)}円</b></div><div>的中口数<b>${G.win}</b></div>
-      <div>配当金<b class="hi">${G.win?yen(G.pay)+"円／口":"—"}</b></div>
-      <div>${G.refund?"返金総額":"残額"}<b class="${G.refund?"warn":""}">${G.refund?yen(G.refundTotal)+"円 全額返金":yen(G.left)+"円"}</b></div></div>
+    <div class="stat-row"><div>口数<b>${G.units}</b></div><div>的中口数<b class="hi">${G.win}</b></div></div>
     ${G.win?`<div class="hint">的中者：${G.winners.map(w=>esc(w.n)+" "+w.c+"口").join("　")}</div>`
-      :(G.units?`<div class="msg warn">的中者なし → 1口${yen(DB.meta.gPrice)}円を全額返金します。<br>${
-        Object.entries(G.refundBy).map(([n,v])=>esc(n)+" "+yen(v)+"円").join("　")}</div>`:"")}
+      :(G.units?`<div class="msg warn">的中者なし。予想にお金はかかっていないので、返金もありません。</div>`:"")}
   </div>`:""}
-  ${U("fine")?`<div class="card"><h2>③ グロススコアと罰金</h2>
+  ${U("fine")?`<div class="card"><h2>③ グロススコアと罰金 <small>選抜者とのグロス勝負。お金は動きません</small></h2>
     ${B.tie?'<div class="msg warn">得票数が並んでいます。下の「手動指定」で決めてください。</div>':""}
     ${B.dup?'<div class="msg ng">同じ人が重複しています。手動指定を見直してください。</div>':""}
     <table style="margin-bottom:13px"><thead><tr><th class="c" style="width:64px">順</th><th>対象者</th>
@@ -5784,14 +5684,13 @@ function vResult(){
       <td><select onchange="DB.result.sel[${i}]=this.value;touch();render()">${opt(DB.result.sel[i])}</select></td></tr>`).join("")}
     </tbody></table>
     <table><thead><tr><th style="min-width:10.5em">氏名</th><th class="n" style="width:104px">グロス</th><th class="c" style="width:70px">対象</th>
-      <th class="n" style="width:100px">負けた数</th><th class="n" style="width:100px">罰金</th></tr></thead><tbody>
+      <th class="n" style="width:100px">負けた数</th></tr></thead><tbody>
     ${ru.map(p=>{const f=B.list.find(x=>x.n===p.n),s=B.sel.some(n=>nz(n)===nz(p.n));
       return `<tr class="zebra"><td>${chip(p.f)}${esc(p.n)}</td>
       <td class="n"><input type="number" class="q" style="width:72px" value="${DB.result.gross[p.n]??""}"
         onchange="DB.result.gross['${esc(p.n)}']=this.value;touch();render()"></td>
-      <td class="c">${s?"★":""}</td><td class="n">${f?f.lost+"名":"—"}</td>
-      <td class="n" style="color:${f?"var(--hit)":"inherit"}">${f?yen(f.amt):"—"}</td></tr>`;}).join("")}
-    <tr><td colspan="4"><b>罰金 合計</b></td><td class="n"><b style="color:var(--hit)">${yen(B.total)}</b></td></tr>
+      <td class="c">${s?"★":""}</td><td class="n" style="color:${f?"var(--hit)":"inherit"}">${f?f.lost+"名":"—"}</td></tr>`;}).join("")}
+    <tr><td colspan="3"><b>選抜者に負けた数の合計</b></td><td class="n"><b style="color:var(--hit)">${B.lostSum}名</b></td></tr>
     </tbody></table></div>`:""}
   <div class="card"><h2>④ 表彰式の演出</h2>
     ${(()=>{const s=standings().net.length?resultStale():[];return s.length?`<div class="msg warn">いまの順位が、上の結果（${s.join("・")}）と合っていません。
@@ -5834,7 +5733,7 @@ function vResult(){
    使わない機能の説明は出さない（help.js）。数や設定はいまのデータから出す（書き忘れを防ぐ） */
 const mstCount=()=>[MASTER.length,MASTER.reduce((a,c)=>a+c.n.length,0)];
 function vHelp(){
-  const m=DB.meta,P=prizeTotal(), L=TABLAB(), has=k=>tabAll().some(([x])=>x===k);
+  const m=DB.meta, L=TABLAB(), has=k=>tabAll().some(([x])=>x===k);
   const step=(n,t,d)=>`<tr class="zebra"><td class="c" style="width:44px"><b style="color:var(--brass)">${n}</b></td>
     <td style="width:150px"><b>${t}</b></td><td>${d}</td></tr>`;
   const rule=(t,d)=>`<tr class="zebra"><td style="width:170px"><b>${t}</b></td><td>${d}</td></tr>`;
@@ -5866,13 +5765,13 @@ function vHelp(){
     ${step(++no,"大会を選ぶ","「新しい大会をはじめる」「前回の大会から設定をコピー」（ルール・賞・コースだけ引き継ぎ、第◯回を1つ進めます）、または最近のファイルから開きます。参加者がまだいない大会では、作成画面で基本 → 競技方法 → 追加ルールの順に決められます。")}
     ${ph("準備",m.phase==="prep"?"いまの段階":"")}
     ${st("meta","大会名・会場・開催日を入れます。コースを選ぶと各ホールのパーが入ります。お金や順位の決め方もここで決めます。")}
-    ${st("rules","使う機能（馬券・GTO・技能賞・賞金など）を選びます。選ぶと、使う画面が増えます。")}
+    ${st("rules","使う機能（馬券・GTO・技能賞・賞品など）を選びます。選ぶと、使う画面が増えます。")}
     ${st("players","氏名を入れます。Excelからの貼り付け（パソコンでは右の列）で一括登録でき、所属と生年月日も同時に取り込めます。表の上で列のまとまりを切り替えます。スマホでは1人1枚のカードで、押すと詳しい欄が開きます。")}
     ${st("groups","「残りを自動で割り当てる」で組を作り、名前を運んで入れ替えます（スマホは名前を押して行き先を選ぶか、長押しして運びます）。最初の時刻と間隔を入れて「全組に時刻を入れる」でスタート時刻がそろいます。スタート表は印刷できます。")}
-    ${st("bets","馬券・GTOの投票を入れます（上で切り替え）。馬券は枠を2つ押し、GTOは人を最下位から順に3名押します。紙の予想は貼り付けで一括取り込みができます。入れ終わったら「締め切る」を押すと入力が止まります（直すときは「解除」）。代金は締め切ってから集めます。")}
-    ${st("money","賞金の配分と、実費・賞金の原資を含めた収支を決めます。")}
+    ${st("bets","馬券・GTOの投票を入れます（上で切り替え）。馬券は枠を2つ押し、GTOは人を最下位から順に3名押します。紙の予想は貼り付けで一括取り込みができます。入れ終わったら「締め切る」を押すと入力が止まります（直すときは「解除」）。予想にお金はかかりません。")}
+    ${st("money","賞品（品名と出どころ）と、経費の収支を決めます。")}
     ${ph("当日",m.phase==="day"?"いまの段階":"")}
-    ${st("collect","ひとりずつ徴収額を受け取ったら押して印を付けます。スマホでは1人1枚のカードです。")}
+    ${st("collect","ひとりずつ支払額を受け取ったら押して印を付けます。スマホでは1人1枚のカードです。支払額は経費だけで、結果を待たずに集金の担当者が集め終えられます。")}
     ${st("score","競技後にスコアを入れます。数字を入れて Enter で次の欄（Shift＋Enter で前の欄）。スマホでは1人ずつの画面になり、画面の数字キーで入れて「次の欄へ」で進みます（「一覧」で表にも切り替えられます）。集計表から入れるときは、グロス・HDCP・ネットの3つを入れて全行が一致すれば正しい打ち込みです。")}
     ${st("prize","ホールごとの受賞者を選びます。")}
     ${ph("発表",m.phase==="award"?"いまの段階":"")}
@@ -5905,59 +5804,60 @@ function vHelp(){
       +(m.sc.tiebreak==="none"?"を決めません。":"を上位とします（理由は順位の表と発表の画面に出ます）。")):""}
     ${U("keiba")?(m.kMode==="馬連"?rule("馬券（馬連予想）",
       "上位2名の<b>氏名の組合せ</b>（順不同）を当てます。<br>"
-      +"1口 "+yen(m.kPrice)+"円。集めた金を的中者だけで山分けし（100円未満は切り捨て）、残りは経費へ。<br>"
+      +"予想にお金はかかりません。的中した口を数えます。<br>"
       +"現在 "+RUN().length+"名・"+(RUN().length*(RUN().length-1)/2)+"通り。<br>"
-      +"投票の後に出走を取り消して<b>指名した2名のどちらかが出走しなくなった</b>ときは、その口を無効とし、掛金をお返しします。")
+      +"投票の後に出走を取り消して<b>指名した2名のどちらかが出走しなくなった</b>ときは、その口を無効とし、的中にも得票にも数えません。")
       :rule("馬券（枠連予想）",
       "上位2名がそれぞれ入る<b>枠</b>の組合せを当てます。同じ枠2つ（ゾロ目）も的中。<br>"
-      +"1口 "+yen(m.kPrice)+"円。集めた金を的中者だけで山分けし（100円未満は切り捨て）、残りは経費へ。<br>"
+      +"予想にお金はかかりません。的中した口を数えます。<br>"
       +"枠は"+(m.frameMode==="group"?"<b>組と同じ番号</b>が自動で入ります。":"自分で指定します（参加者の「枠と実力」）。")
       +"　現在 "+FRAMES().length+"枠・"+(FRAMES().length*(FRAMES().length+1)/2)+"通り。<br>"
-      +"投票の後に組が変わって<b>枠そのものが無くなった</b>ときは、その枠を含む口を無効とし、掛金をお返しします。")):""}
+      +"投票の後に組が変わって<b>枠そのものが無くなった</b>ときは、その枠を含む口を無効とし、的中にも得票にも数えません。")):""}
     ${U("gto")?rule("GTO（下位予想）",
-      "グロス打数の多い<b>下位3名</b>を当てます。1口 "+yen(m.gPrice)+"円。<br>"
+      "グロス打数の多い<b>下位3名</b>を当てます。予想にお金はかかりません。<br>"
       +"本日の方式は<b>"+m.gMode+"</b>（"+(m.gMode==="3連単"?"順番まで一致で的中":"3名が合っていれば的中・順不同")+"）。<br>"
-      +"的中者が出なかったときは<b>全額返金</b>します。"):""}
+      +"的中者が出なかったときは「的中なし」と発表します。"):""}
     ${U("keiba")||U("gto")?rule("単勝・複勝を作っていない理由",
       "予想ゲームは<b>馬券（枠連）とGTO（下位予想）の2つだけ</b>にしています。<br>"
       +"・<b>単勝</b>（1位だけを当てる）は、すでにある「優勝」の賞と当てる対象が重なるため作っていません。<br>"
-      +"・<b>複勝</b>（上位何名かに入れば的中）は、的中しやすいぶん配当が薄くなり、当てる楽しみが小さくなるため作っていません。<br>"
-      +"馬券とGTOは、的中率と配当のバランスが良い2種類として選んでいます。"):""}
+      +"・<b>複勝</b>（上位何名かに入れば的中）は、的中しやすいぶん当てる楽しみが小さくなるため作っていません。<br>"
+      +"馬券とGTOは、当てやすさと難しさのバランスが良い2種類として選んでいます。"):""}
     ${U("keiba")||U("gto")?rule("無効になる口",
-      "つぎの口は<b>無効</b>とし、売上に入れず掛金をそのままお返しします。得票数にも数えません。<br>"
+      "つぎの口は<b>無効</b>とし、的中にも得票数にも数えません。<br>"
       +(U("gto")?"・同じ人を2回以上指名している（入力の時点で弾きます）<br>"
         +"・<b>出走しない方を指名している</b>。欠席が分かったら「"+L.players+"」で組を「未定」にしてください。<br>":"")
       +(U("keiba")?(m.kMode==="馬連"?"・同じ人を2回指名している、または<b>出走しない方を指名している</b><br>":"・無くなった枠を指名している<br>"):"")
-      +"無効の口は「"+L.sum+"」に一覧で出ます。当日はここを見て、集金の担当者と突き合わせてください。"):""}
+      +"無効の口は「"+L.sum+"」に一覧で出ます。"):""}
     ${U("score")?rule("棄権・ノーカード",
       "スコア入力の<b>「ノーカード」に印</b>を付けてください（スマホは1人ずつの画面の「棄権・ノーカードにする」）。"
       +"順位・GTOの下位3名・罰金のいずれからも外れ、「まだ入力していない人」とも区別されます。<br>"
-      +"その方を指名していたGTOの口は、組を「未定」にすれば無効・返金になります。<br>"
+      +"その方を指名していたGTOの口は、組を「未定」にすれば無効になります。<br>"
       +"最下位として扱う運用にはしていません（下手を当てるゲームの趣旨から外れるため）。"):""}
     ${U("fine")?rule("罰金",
       "GTOで投票を多く集めた上位"+m.fineTop+"名を「選抜者」とし、<br>"
-      +"その選抜者に<b>グロス</b>で負けた人が、負けた人数 × "+yen(m.fineUnit)+"円を支払います。選抜者本人は対象外。<br>"
+      +"その選抜者と<b>グロス</b>で勝負し、負けた人数を数えます。<b>お金は動きません。</b>選抜者本人は対象外。<br>"
       +"得票数が並んだときは、「"+L.result+"」の「手動指定」で決めてください。<br>"
       +"得票数は<b>有効な口だけ</b>を数えます（無効の口は含めません）。"):""}
     ${U("near")?rule("ニアピン","対象ホール "+(m.nearHoles.join("、")||"未設定")+"。"
       +(holeFit("near").length?"（このコースのパー3は "+holeFit("near").join("、")+"番）":"")+"<br>"
-      +(U("prize")?"1つあたり "+yen(PZ().near)+"円。":"")):""}
+      +(U("prize")?"賞品は "+esc(itemText(giftOf("near")))+"。":"")):""}
     ${U("nearAny")?rule("何でもニアピン","打数を問わずピンに近づけた方が受賞。対象ホール "
-      +((m.nearAnyHoles||[]).join("、")||"未設定")+"。"+(U("prize")?"1つあたり "+yen(PZ().nearAny)+"円。":"")):""}
+      +((m.nearAnyHoles||[]).join("、")||"未設定")+"。"+(U("prize")?"賞品は "+esc(itemText(giftOf("nearAny")))+"。":"")):""}
     ${U("drako")?rule("ドラコン","対象ホール "+(m.drakoHoles.join("、")||"未設定")+"。"
-      +(U("prize")?"1つあたり "+yen(PZ().drako)+"円。":"")):""}
+      +(U("prize")?"賞品は "+esc(itemText(giftOf("drako")))+"。":"")):""}
     ${U("team")?rule("団体賞","参加者の<b>所属</b>ごとにチーム分けし、"
       +(TM().use==="avg"?"ネットの平均":"ネットの合計")+"で競います。"
       +(TM().size?"各チーム上位"+TM().size+"名":"全員")+"が対象。上位"+TM().top+"チームを表彰。"
-      +(U("prize")?"1チーム "+yen(PZ().team)+"円。":"")):""}
+      +(U("prize")?"賞品は "+esc(itemText(giftOf("team")))+"。":"")):""}
     ${U("lucky")?rule("ラッキー賞",LK().count+"名を抽選で選びます。"
       +(LK().exclude?"すでに受賞した方は除きます。":"全員が対象です。")
-      +(U("prize")?"1名 "+yen(PZ().lucky)+"円。":"")):""}
-    ${U("budget")?rule("賞金の原資","1人 "+yen(BG().fee)+"円。対象は "+feeMembers().length+"名（参加者"+DB.players.length+"名中）。<br>"
-      +"「参加のしかた」で「予想のみ」を選んだ方と、組から外した方は対象外になります。"):""}
-    ${U("prize")?rule("賞金","順位賞 "+yen(P.rank)+"円 ＋ 技能賞 "+yen(P.skill)+"円"
-      +(U("team")?" ＋ 団体賞 "+yen(P.team)+"円":"")+(U("lucky")?" ＋ ラッキー賞 "+yen(P.lucky)+"円":"")
-      +" ＝ <b>"+yen(P.all)+"円</b>"):""}
+      +(U("prize")?"賞品は "+esc(itemText(giftOf("lucky")))+"。":"")):""}
+    ${U("budget")?rule("経費","集めるのは<b>経費だけ</b>です（"+((BG().collect||[]).filter(x=>+x.amt>0).length)+"項目）。"
+      +"1人ずつの支払額は、参加のしかたと経費の項目で決まり、<b>成績や予想では変わりません。</b><br>"
+      +"プレーの経費は "+feeMembers().length+"名（参加者"+DB.players.length+"名中）。「予想のみ」の方と、組から外した方は外れます。"
+      +(prizeItems().length?"<br>賞品購入費は1人あたり"+(prizeCapOf()===null?"（上限 未入力）":" 上限 "+yen(prizeCapOf())+"円")+"。":"")):""}
+    ${U("prize")?rule("賞品","賞は品物で表彰します（"+prizeRows().length+"賞）。賞ごとの金額は持ちません。<br>"
+      +"主催者が買う賞品の費用は、経費の「賞品購入費」でまとめて集めます。"):""}
     </tbody></table>
     <div class="hint" style="margin-top:10px">この表は今の設定を映しています。変えたいときは「${L.meta}」「${L.rules}」で設定してください。</div>
   </div>
@@ -5986,7 +5886,7 @@ function vHelp(){
   <div class="card"><h2>スマホで使うとき</h2>
     <table><tbody>
     ${rule("画面を選ぶ",`下のタブ（${L.hub}といまの段階の画面）と、${L.hub}の「すべての画面」から選びます。上は大会名と段階の切替だけです。`)}
-    ${rule(L.players,"1人1枚のカードです。押すと、組・枠・参加のしかた・原資などの欄が開きます。")}
+    ${rule(L.players,"1人1枚のカードです。押すと、組・枠・参加のしかた・経費などの欄が開きます。")}
     ${rule(L.groups,"名前を押すと行き先の組を選べます。長押しして運ぶこともできます。")}
     ${has("collect")?rule(L.collect,"カードを押すと受け取り済みになります（もう一度押すと戻ります）。受け取った数と残りは画面の下に出ます。"
       +"受け取ったあとで金額が変わった方は <b>△ のカード</b>になり、押すと差額を受け取った（お返しした）ことになります。"):""}
@@ -6033,7 +5933,7 @@ function vHelp(){
     ${rule("氏名を選ぶ欄に人がいない","「"+L.players+"」で登録し、出走する方には組（または枠）を割り当ててください。")}
     ${U("keiba")||U("gto")?rule("予想が入れられない","「締め切る」を押した後は入力が止まります。直すときは「"+L.bets+"」の「解除」を押してください。"):""}
     ${U("score")?rule("順位が出ない","スコアが足りていません。ハンディの計算には隠しホールすべてのスコアが必要です。"):""}
-    ${U("keiba")||U("gto")?rule("配当が「—」のまま","当選枠や下位3名がまだ入っていません。「"+(U("score")?L.rank+"」の「馬券・GTO・罰金へ反映」か「":"")+L.result+"」で入れてください。"):""}
+    ${U("keiba")||U("gto")?rule("的中が「—」のまま","当選枠や下位3名がまだ入っていません。「"+(U("score")?L.rank+"」の「馬券・GTO・罰金へ反映」か「":"")+L.result+"」で入れてください。"):""}
     ${has("collect")?rule("集金のあとで欠席が出た",
       "「"+L.players+"」か「"+L.groups+"」でその方を組から外してください。頭割りの額が変わった方は、「"+L.collect+"」で<b>差額と理由</b>が出ます"
       +"（受け取った額を覚えているので、済みのままにはなりません）。<br>"
@@ -6081,9 +5981,11 @@ function vData(){
       <button class="btn primary" onclick="dlJson()">保存（ファイルに書き出す）</button>
       <button class="btn" onclick="jsonFile.click()">読み込む</button>
       <input id="jsonFile" type="file" accept=".json" style="display:none" onchange="upJson(this.files[0]);this.value=''">
-      <button class="btn ghost" onclick="dlCsv()">精算一覧をCSVで出す</button>
+      <button class="btn ghost" onclick="dlPayCsv()">集金一覧をCSVで出す</button>
+      <button class="btn ghost" onclick="dlCsv()">予想の集計をCSVで出す</button>
     </div>
-    <div class="hint">旧版（馬券・GTO専用アプリ）で保存したファイルも読み込めます。</div>
+    <div class="hint">社内版（CompeMaster Pro v68）のファイルも開けます。<b>参加者・組・コース・スコア・賞の名前・経費の項目</b>を取り込み、
+      予想（馬券・GTO）・賞金の額・賞金の原資・受け取りの記録は取り込みません（V1 ではお金の扱いが違うため）。</div>
   </div>
   <div class="card"><h2>新しい大会をはじめる</h2>
     <div class="row">
@@ -6092,7 +5994,7 @@ function vData(){
       <button class="btn warn" onclick="wipe()">全部消して最初から</button>
     </div>
     <div class="hint"><b>サンプル①</b>は16名・8組8枠、馬券100口・GTO50口・技能賞8ホール・
-      18ホール分のスコアまで入った、順位も配当も罰金も出た状態です。<b>当日の予行演習に使ってください。</b><br>
+      18ホール分のスコアまで入った、順位も的中も罰金の勝負も出た状態です。<b>当日の予行演習に使ってください。</b><br>
       <b>サンプル②</b>は当日つまずきやすい形をわざと集めたものです。同ネット・同グロス・得票が並ぶ選抜者・
       欠席者・無効になる口・該当者のいない技能賞・ノーカードが入っています。
       <b>迷ったときにどう出るかを、事前に見ておくためのものです。</b></div>
@@ -6113,6 +6015,39 @@ function dlJson(){
   /* サイドバーとホームにファイル名を出すので描き直す */
   dirty=false;autoSave();render();
 }
+/* ---- V1 の形に整える（V1・M1） ----
+   どのファイル・自動保存を開いても最後にここを通す。お金の項目（予想の単価・罰金の単価・賞金の原資・
+   口数の見込み・賞ごとの金額・原資の個別額）を取り除き、賞品（品名と出どころ）と経費の新しい項目を補う。
+   取り除かないと、社内版（v68）のファイルから金額が紛れ込み、画面のどこかに円が出る */
+function v1Clean(o){
+  const m=o.meta;
+  ["kPrice","gPrice","fineUnit"].forEach(k=>delete m[k]);
+  const b=m.budget||(m.budget={});
+  ["fee","kGuess","gGuess"].forEach(k=>delete b[k]);
+  if(!Array.isArray(b.collect)) b.collect=[];
+  b.collect.forEach(x=>{ if(!x.mode) x.mode="each"; if(!x.to) x.to="play"; });
+  if(b.prizeCap===undefined) b.prizeCap="";
+  if(b.leftover===undefined) b.leftover="carry";
+  const P=m.prizes||(m.prizes={});
+  if(!Array.isArray(P.rank)) P.rank=[];
+  P.rank.forEach(r=>{ delete r.amt; if(r.item===undefined) r.item=""; if(!r.src) r.src="host"; });
+  if(!P.gift||typeof P.gift!=="object") P.gift={};
+  GIFTKEYS.forEach(k=>{ if(typeof P[k]!=="object"||P[k]===null) delete P[k];
+    if(!P.gift[k]||typeof P.gift[k]!=="object") P.gift[k]={item:"",src:"host"}; });
+  (o.players||[]).forEach(p=>{ delete p.feeAmt; });
+  return o;
+}
+/* ---- 社内版（v68）のファイルから取り込む（V1・M1、SPEC-V1.md 7章） ----
+   ファイルの札（app）が無いものは v68 のもの。お金の意味が違うので、予想（馬券・GTO。1口いくらで
+   買ったもの）・結果の当選欄・受け取りの記録は捨てる。参加者・組・コース・スコア・賞の名前と決め方・
+   経費の項目は残す（賞の金額と賞金の原資は v1Clean が外す） */
+function fromV68(d){
+  d.keiba=[]; d.gto=[]; d.paid={};
+  const g=(d.result&&d.result.gross)||{};
+  d.result={frame:"",top2:["",""],low:["","",""],gross:g,sel:["","",""],lucky:[]};
+  if(d.meta){ d.meta.betsClosed=false; d.meta.betsClosedAt=""; }
+  return d;
+}
 function migrate(d){
   const b=blank();
   if(d.v===2){
@@ -6131,20 +6066,18 @@ function migrate(d){
     o.meta.lucky=Object.assign(blank().meta.lucky,(d.meta&&d.meta.lucky)||{});
     o.result.lucky=(d.result&&d.result.lucky)||[];
     o.meta.budget=Object.assign(blank().meta.budget,(d.meta&&d.meta.budget)||{});
-    o.players.forEach(p=>{ if(p.fee===undefined) p.fee=(+p.f>0); if(p.feeAmt===undefined) p.feeAmt=""; });
-    return o;
+    o.players.forEach(p=>{ if(p.fee===undefined) p.fee=(+p.f>0); });
+    return v1Clean(o);
   }
   /* 旧版（v1）からの移行 */
   b.meta.name=(d.meta&&d.meta.org)||b.meta.name;
   b.meta.place=(d.meta&&d.meta.place)||"";
   b.meta.date=(d.meta&&d.meta.date)||"";
-  b.meta.kPrice=(d.meta&&d.meta.kPrice)||200;
-  b.meta.gPrice=(d.meta&&d.meta.gPrice)||500;
   b.meta.gMode=(d.meta&&d.meta.mode)||"3連複";
   b.meta.use={score:false,near:false,nearAny:false,drako:false,keiba:true,gto:true,fine:true,prize:false,budget:false};
   b.meta.frameMode="manual";
   b.players=(d.roster||[]).map(p=>{const f=(p.run===false?0:+p.f||0);
-    return {n:p.n,org:"",bd:"",g:0,f,vote:p.vote!==false,fee:f>0,feeAmt:""};});
+    return {n:p.n,org:"",bd:"",g:0,f,vote:p.vote!==false,fee:f>0};});
   b.keiba=d.keiba||[];b.gto=d.gto||[];
   b.result=Object.assign(b.result,d.result||{});
   return b;
@@ -6155,7 +6088,12 @@ function upJson(f){
   r.onload=()=>{try{const d=JSON.parse(r.result);
     if(!d.meta)throw 0;
     /* V1：ファイルの札（app・schema）は大会データの一部ではないので外す。
-       札の無いファイルは v68（社内版）のもの。M0 ではそのまま読む（予想・賞金を捨てる処理は M1） */
+       札の無いファイルは v68（社内版）のもの。確かめてから、予想・受け取りの記録を捨てて取り込む（M1） */
+    const v68=!d.app;
+    if(v68&&!confirm("社内版（CompeMaster Pro v68）のファイルです。\n"
+      +"参加者・組・コース・スコア・賞の名前と、経費の項目を取り込みます。\n"
+      +"予想（馬券・GTO）・賞金の額・賞金の原資・受け取りの記録は取り込みません。よろしいですか。")) return;
+    if(v68) fromV68(d);
     delete d.app; delete d.schema;
     const next=migrate(d);
     /* 2026-09-21：いまの大会に実データがあるまま読み込むと、保存していない変更が
@@ -6176,12 +6114,22 @@ function csvCell(v){
   return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
 }
 function dlCsv(){
+  /* V1（M1）：予想の集計だけ。お金の列は無い（経費は dlPayCsv で別のファイルに出す。SPEC-V1.md 5章） */
   const L=ledger(),K=calcK(),G=calcG();
-  const rows=[["氏名","組","枠","馬券口数","GTO口数","お支払い","払戻・返金","罰金","差引"]];
+  const rows=[["氏名","組","枠","馬券口数","馬券的中","GTO口数","GTO的中","無効の口","選抜者に負けた数"]];
   L.forEach(x=>{const p=DB.players.find(y=>y.n===x.n)||{};
-    rows.push([x.n,p.g||"",p.f||"",x.ku,x.gu,x.paid,x.back,x.fine,x.net]);});
-  rows.push(["合計","","",K.units,G.units,K.sales+G.sales,"","",""]);
-  dl("精算一覧.csv","\uFEFF"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n"),"text/csv");
+    rows.push([x.n,p.g||"",p.f||"",x.ku,x.kw,x.gu,x.gw,x.bad,x.lost]);});
+  rows.push(["合計","","",K.allUnits,K.win,G.allUnits,G.win,K.badUnits+G.badUnits,""]);
+  dl("予想の集計.csv","\uFEFF"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n"),"text/csv");
+}
+/* 集金一覧（経費だけ）。予想・成績の列は持たない（円とptを同じ表に並べない。原則 R4） */
+function dlPayCsv(){
+  const T=settle();
+  const rows=[["氏名","参加のしかた","経費","キャンセル料","切り上げ","支払額","受け取り済","車の返金"]];
+  T.forEach(x=>rows.push([x.n,(JOIN.find(j=>j[0]===joinOf(x.p))||["",""])[1],x.play,x.cancel,x.roundUp,x.bill,x.got?"済":"",x.carBack]));
+  rows.push(["合計","",T.reduce((a,x)=>a+x.play,0),T.reduce((a,x)=>a+x.cancel,0),T.reduce((a,x)=>a+x.roundUp,0),
+    T.reduce((a,x)=>a+x.bill,0),"",T.reduce((a,x)=>a+x.carBack,0)]);
+  dl("集金一覧.csv","\uFEFF"+rows.map(r=>r.map(csvCell).join(",")).join("\r\n"),"text/csv");
 }
 function wipe(){
   if(!confirm("入力した内容をすべて消します。よろしいですか。"))return;
@@ -6196,7 +6144,7 @@ function sample(){
   const N=["青木　健一","井上　修","上田　直樹","江藤　誠","岡本　浩二","川口　亮","木村　拓也","久保　聡",
            "小林　大輔","佐々木　豊","島田　健","菅原　悟","高木　淳","田村　和彦","土井　智之","中西　学"];
   N.forEach((n,i)=>DB.players.push({n,org:i<8?"営業部":"技術部",
-    bd:(1960+i)+"-0"+(1+i%9)+"-1"+(i%9),g:0,f:0,vote:true,fee:true,feeAmt:""}));
+    bd:(1960+i)+"-0"+(1+i%9)+"-1"+(i%9),g:0,f:0,vote:true,fee:true}));
   /* ---- 組と枠は別のもの ----
      組は同じ時間に一緒に回る4名。16名なら 4組 × 4名。
      枠は馬券の賭け単位で2名。16名なら 8枠 × 2名。
@@ -6254,11 +6202,17 @@ function sample(){
            {hole:11,who:N[9],rec:"2.1m"},{hole:16,who:N[4],rec:"0.9m"}];
   DB.nearAny=[{hole:9,who:N[11],rec:"0.6m"},{hole:18,who:N[3],rec:"1.5m"}];
   DB.drako=[{hole:4,who:N[6],rec:"282Y"},{hole:14,who:N[13],rec:"271Y"}];
-  DB.meta.budget.fee=6000;
   /* 当日集める実費。幹事が預かってゴルフ場へ払う */
-  DB.meta.budget.collect=[{label:"プレー代（グリーンフィー・昼食）",amt:13500},
-                          {label:"パーティ・飲み物代",amt:2000}];
-  DB.meta.budget.kGuess=6; DB.meta.budget.gGuess=3;
+  DB.meta.budget.collect=[{label:"プレー代（グリーンフィー・昼食）",amt:13500,mode:"each",to:"play"},
+                          {label:"懇親会費",amt:3000,mode:"each",to:"party"},
+                          {label:"賞品購入費",amt:3000,mode:"each",to:"play",kind:"prize"}];
+  /* 賞品購入費の上限は弁護士の確認待ち（SPEC-V1.md U1）。サンプルでは仮に 3,000円 とする */
+  DB.meta.budget.prizeCap=3000;
+  /* 賞品の品名（架空）。賞ごとの金額は持たない */
+  ["ゴルフボール 2ダース","ゴルフボール 1ダース","ゴルフボール 半ダース","グローブ","ティー・マーカー","パター練習マット","ボールケース"]
+    .forEach((it,i)=>{if(DB.meta.prizes.rank[i]) DB.meta.prizes.rank[i].item=it;});
+  DB.meta.prizes.gift.near.item="ボール 3個"; DB.meta.prizes.gift.drako.item="ボール 3個";
+  DB.meta.prizes.gift.nearAny.item="ティー"; DB.meta.prizes.gift.lucky.item="次回プレー券"; DB.meta.prizes.gift.lucky.src="venue";
   DB.meta.use.team=true; DB.meta.use.lucky=true;
   DB.meta.budget.expense=[{label:"プレー費・食事",amt:0}];
 
@@ -6575,7 +6529,7 @@ function prizeSlides(key,label){
       <div class="ws-r">
         <div class="veil hidden" id="veil">${orgOf(r.who)?`<div class="ws-org">${esc(orgOf(r.who))}</div>`:""}<div class="name-xl">${esc(r.who)}</div>
           ${r.rec?`<div class="ws-stats"><div class="hi"><i>記録</i><b>${esc(r.rec)}</b></div></div>`:""}</div>
-        ${U("prize")&&r.who&&+DB.meta.prizes[key]?`<div class="ws-prize">${lab}賞<b>${yen(DB.meta.prizes[key])}円</b></div>`:""}
+        ${U("prize")&&r.who?`<div class="ws-prize">${lab}賞<b>${esc(itemText(giftOf(key)))}</b></div>`:""}
       </div></div>`});
   });
   return out;
@@ -6610,13 +6564,14 @@ const rank=(r,n)=>`<div class="kicker">G　T　O　結　果</div>
     <div class="ws-r">
       <div class="veil hidden" id="veil">${o.org?`<div class="ws-org">${esc(o.org)}</div>`:""}<div class="name-xl">${esc(o.name||"—")}</div>
         ${(o.stats||[]).length?`<div class="ws-stats">${o.stats.map(([l,v,hi])=>`<div class="${hi?"hi":""}"><i>${l}</i><b>${esc(v)}</b></div>`).join("")}</div>`:""}</div>
-      ${o.prize&&+o.prize[1]?`<div class="ws-prize">${esc(o.prize[0])}<b>${yen(o.prize[1])}円</b></div>`:""}
+      ${o.prize&&o.prize[1]?`<div class="ws-prize">${esc(o.prize[0])}<b>${esc(o.prize[1])}</b></div>`:""}
     </div></div>`;
   const stOf=n=>{const r=standings().rows.find(x=>x.n===n);
     return r&&r.g!==null?[["ネット",r.net??"—",1],["グロス",r.g],["HDCP",r.hc??"—"]]:[];};
   const prizeFor=(n,kind,rk)=>{if(!U("prize"))return null;
     const r=prizeRows().find(x=>x.who===n&&x.kind===kind&&(rk===undefined||+x.n===rk));
-    return r?[r.label+(kind==="rank"&&!/賞$/.test(r.label)?"賞":""),+r.amt||0]:null;};
+    /* V1（M1）：賞は品物。金額ではなく品名を出す（未入力なら「賞品」） */
+    return r?[r.label+(kind==="rank"&&!/賞$/.test(r.label)?"賞":""),itemText(r)]:null;};
   /* ---- 発表の並び ----
      順位を先に伏せておくのが表彰式の要。
      馬券の当選枠はネット上位2名が入る枠なので、先に出すと優勝者が割れてしまう。
@@ -6644,8 +6599,6 @@ const rank=(r,n)=>`<div class="kicker">G　T　O　結　果</div>
           org:orgOf(st.best.n),name:st.best.n,
           stats:[["グロス",st.best.g,1],["ネット",st.best.net??"—"],["HDCP",st.best.hc??"—"]],
           prize:prizeFor(st.best.n,"best")})});
-      const pmoney=n=>{if(!U("prize"))return"";const v=prizeOf(n);
-        return v?`<div class="sub" style="color:var(--brass);letter-spacing:.2em">賞金 ${yen(v)}円</div>`:"";};
       st.net.slice(0,3).reverse().forEach(r=>{
         /* 同ネットの相手がいれば、並びの理由を左に出す（表彰の場で説明できるように） */
         const i=st.net.indexOf(r), up=st.net[i-1], dn=st.net[i+1];
@@ -6654,7 +6607,7 @@ const rank=(r,n)=>`<div class="kicker">G　T　O　結　果</div>
         slides.push({id:"s-"+r.rank,lab:r.rank===1?"優勝":r.rank+"位",who:r.n,rv:1,enter:e=>reveal(e,r.rank===1?1:(r.rank===2?2:3)),
           html:()=>winSlide({kick:r.rank===1?"優　勝":"第 "+r.rank+" 位",big:r.rank,unit:"位",tie,
             org:orgOf(r.n),name:r.n,stats:[["ネット",r.net,1],["グロス",r.g],["HDCP",r.hc]],
-            prize:prizeFor(r.n,"rank",r.rank)||(pmoney(r.n)?["賞金",prizeOf(r.n)]:null)})});
+            prize:prizeFor(r.n,"rank",r.rank)})});
       });
       if(U("team")){
         const T=teams(),top=T.rows.slice(0,+TM().top||1);
@@ -6664,7 +6617,7 @@ const rank=(r,n)=>`<div class="kicker">G　T　O　結　果</div>
               TM().size?"（各チーム上位"+TM().size+"名）":""}</div>
             <div class="sel-cards">${top.map((t,i)=>`<div class="sel-card" style="animation-delay:${i*.16}s">
               <div class="rk">第 ${t.rank} 位</div><div class="nm">${esc(t.name)}</div>
-              <div class="vt">${t[T.key]}${U("prize")&&+PZ().team?"　／　"+yen(PZ().team)+"円":""}</div>
+              <div class="vt">${t[T.key]}${U("prize")&&nz(giftOf("team").item)?"　／　"+esc(giftOf("team").item):""}</div>
               <div class="vt" style="margin-top:.6vmin">${t.used.map(r=>esc(r.n)).join("・")}</div></div>`).join("")}</div>`});
       }
       if(U("prize")){
@@ -6684,14 +6637,14 @@ const rank=(r,n)=>`<div class="kicker">G　T　O　結　果</div>
           slides.push({id:"s-pz"+i,lab:r.label,who:r.who,rv:1,enter:e=>reveal(e,2),
             html:()=>winSlide({kick:sp(r.label),big:r.label,txt:1,
               tie:r.kind==="last"?"ネットの下から "+r.n+" 番目":r.kind==="rank"?"ネット "+r.n+" 位":"",
-              org:orgOf(r.who),name:r.who,stats:stOf(r.who),prize:[r.label+(/賞$/.test(r.label)?"":"賞"),+r.amt||0]})});
+              org:orgOf(r.who),name:r.who,stats:stOf(r.who),prize:[r.label+(/賞$/.test(r.label)?"":"賞"),itemText(r)]})});
         });
         const rest=other.slice(ONE);
         if(rest.length) slides.push({id:"s-other",lab:"その他の賞",who:rest.map(r=>r.label+" "+r.who).join("・"),enter:()=>cheer(rest.length),
           html:()=>`<div class="kicker">${rest.map(r=>esc(r.label)).join("　・　")}</div>
             <div class="rule"></div>
             <div class="winners">${rest.map((r,i)=>`<div class="winner" style="animation-delay:${i*.1}s">
-              ${esc(r.label)}　${esc(r.who)}<em>${yen(r.amt)}円</em></div>`).join("")}</div>`});
+              ${esc(r.label)}　${esc(r.who)}<em>${esc(itemText(r))}</em></div>`).join("")}</div>`});
       }
     }
   }
@@ -6718,12 +6671,11 @@ const rank=(r,n)=>`<div class="kicker">G　T　O　結　果</div>
     ...(top.filter(Boolean).length?[{id:"k-top",lab:"上位2名",who:top.join("・"),enter:()=>honor(),html:()=>`<div class="kicker">上　位　2　名</div><div class="rule"></div>
       <div class="title" style="font-size:clamp(22px,4.4vw,58px)">${top.map(esc).join("　／　")}</div>
       ${uma?"":`<div class="sub">${fa}枠　—　${fb}枠</div>`}`}]:[]),
-    {id:"k-pay",lab:"馬券 払戻",who:K.win?yen(K.pay)+"円／口":"的中なし",enter:()=>countUp("kpay",K.pay),html:()=>`<div class="kicker">馬　券　払　戻</div>
-      <div class="payout"><span id="kpay">0</span><span class="yen">円 / 口</span></div>
-      <div class="stats"><div class="stat"><i>売上金</i><b>${yen(K.sales)}</b></div>
-        <div class="stat"><i>総口数</i><b>${K.units}</b></div>
-        <div class="stat"><i>的中口数</i><b>${K.win}</b></div>
-        <div class="stat"><i>倍率</i><b>${DB.meta.kPrice?(K.pay/DB.meta.kPrice).toFixed(1):"0"}倍</b></div></div>`},
+    /* V1（M1）：払戻の幕は「的中口数」の発表に置き換えた。お金は動かない（ptの発表は M2） */
+    {id:"k-pay",lab:"馬券 的中",who:K.win?K.win+"口":"的中なし",enter:()=>{if(K.win)countUp("kpay",K.win,1);else thud();},html:()=>`<div class="kicker">馬　券　的　中</div>
+      <div class="payout"><span id="kpay">0</span><span class="yen">口</span></div>
+      <div class="stats"><div class="stat"><i>総口数</i><b>${K.units}</b></div>
+        <div class="stat"><i>的中口数</i><b>${K.win}</b></div></div>`},
     {id:"k-win",lab:"馬券 的中者",who:K.winners.map(w=>w.n).join("・"),enter:()=>cheer(K.winners.length),html:()=>`<div class="kicker">馬　券　的　中　者</div>
       <div class="rule"></div>${winnerList(K.winners)}`});
   if(U("gto")){
@@ -6739,19 +6691,15 @@ const rank=(r,n)=>`<div class="kicker">G　T　O　結　果</div>
           org:orgOf(n),name:n,stats:gs!==undefined&&gs!==""?[["グロス",gs,1]]:[]})});
     });
     slides.push(
-      {id:"g-pay",lab:"GTO 払戻",who:G.refund?"的中なし（全額返金）":yen(G.pay)+"円／口",enter:()=>{if(!G.refund)countUp("gpay",G.pay);else thud();},html:()=>G.refund?
-        `<div class="kicker">G　T　O　払　戻</div>
+      {id:"g-pay",lab:"GTO 的中",who:G.nohit?"的中なし":G.win+"口",enter:()=>{if(!G.nohit)countUp("gpay",G.win,1);else thud();},html:()=>G.nohit?
+        `<div class="kicker">G　T　O　的　中</div>
          <div class="title" style="font-size:clamp(24px,4.6vw,64px)">的中者なし</div><div class="rule"></div>
-         <div class="sub">1口 ${yen(DB.meta.gPrice)}円を全額お返しします</div>
-         <div class="stats"><div class="stat"><i>返金総額</i><b>${yen(G.refundTotal)}</b></div>
-           <div class="stat"><i>総口数</i><b>${G.units}</b></div></div>`:
-        `<div class="kicker">G　T　O　払　戻（${DB.meta.gMode}）</div>
-         <div class="payout"><span id="gpay">0</span><span class="yen">円 / 口</span></div>
-         <div class="stats"><div class="stat"><i>売上金</i><b>${yen(G.sales)}</b></div>
-           <div class="stat"><i>総口数</i><b>${G.units}</b></div>
-           <div class="stat"><i>的中口数</i><b>${G.win}</b></div>
-           <div class="stat"><i>倍率</i><b>${DB.meta.gPrice?(G.pay/DB.meta.gPrice).toFixed(1):"0"}倍</b></div></div>`},
-      {id:"g-win",lab:"GTO 的中者",who:G.winners.map(w=>w.n).join("・"),enter:()=>{if(!G.refund)cheer(G.winners.length);},html:()=>`<div class="kicker">G　T　O　的　中　者</div>
+         <div class="stats"><div class="stat"><i>総口数</i><b>${G.units}</b></div></div>`:
+        `<div class="kicker">G　T　O　的　中（${DB.meta.gMode}）</div>
+         <div class="payout"><span id="gpay">0</span><span class="yen">口</span></div>
+         <div class="stats"><div class="stat"><i>総口数</i><b>${G.units}</b></div>
+           <div class="stat"><i>的中口数</i><b>${G.win}</b></div></div>`},
+      {id:"g-win",lab:"GTO 的中者",who:G.winners.map(w=>w.n).join("・"),enter:()=>{if(!G.nohit)cheer(G.winners.length);},html:()=>`<div class="kicker">G　T　O　的　中　者</div>
         <div class="rule"></div>${winnerList(G.winners)}`});
   }
   /* 選抜者が1人も決まっていなければ、選抜者と罰金の幕を出さない */
@@ -6763,13 +6711,14 @@ const rank=(r,n)=>`<div class="kicker">G　T　O　結　果</div>
           <div class="nm">${esc(n)}</div>
           <div class="vt">${B.sg[i]!==undefined&&B.sg[i]!==""?"グロス "+B.sg[i]:"&nbsp;"}</div></div>`).join("")
         ||'<p class="none">未設定</p>'}</div>`)));
-    slides.push({id:"b-fine",lab:"罰金",who:B.total?yen(B.total)+"円":"該当者なし",enter:()=>{B.total>0?penalty():bell(784,0,.6,.3);},html:()=>B.total>0?
+    /* V1（M1）：罰金の幕は「選抜者に負けた数」の発表だけ。お金は動かない（ptの発表は M3） */
+    slides.push({id:"b-fine",lab:"罰金",who:B.lostSum?B.list.length+"名":"該当者なし",enter:()=>{B.lostSum>0?penalty():bell(784,0,.6,.3);},html:()=>B.lostSum>0?
       `<div class="kicker">罰　金</div>
-       <div class="sub" style="margin-bottom:2vmin">選抜者に及ばなかった方　1名につき${yen(DB.meta.fineUnit)}円</div>
+       <div class="sub" style="margin-bottom:2vmin">選抜者にグロスで及ばなかった方</div>
        <div class="fine-tbl">${B.list.map((w,i)=>`<div class="fine-row" style="animation-delay:${i*.12}s">
          <span class="fn">${esc(w.n)}</span><span class="fg">${w.g}</span>
-         <span class="fg">${w.lost}名に敗れ</span><span class="fa">${yen(w.amt)}円</span></div>`).join("")}</div>
-       <div class="stats"><div class="stat"><i>合計</i><b style="color:var(--hit)">${yen(B.total)}</b></div></div>`:
+         <span class="fa">${w.lost}名に敗れ</span></div>`).join("")}</div>
+       <div class="stats"><div class="stat"><i>該当</i><b style="color:var(--hit)">${B.list.length}名</b></div></div>`:
       `<div class="kicker">罰　金</div><div class="rule"></div>
        <div class="title" style="font-size:clamp(22px,4.4vw,58px)">該当者なし</div>`});
   }
@@ -6782,9 +6731,7 @@ const rank=(r,n)=>`<div class="kicker">G　T　O　結　果</div>
   }
   slides.push({id:"end",lab:"締め",enter:()=>outro(),html:()=>`<div class="kicker">締　め</div>
     <div class="title" style="font-size:clamp(20px,3.8vw,50px)">${esc(DB.meta.name||"")}</div>
-    ${U("keiba")||U("gto")?`<div class="payout" style="font-size:clamp(34px,7.6vw,102px);margin-top:2vmin">${
-      yen(K.left+(G.refund?0:G.left))}<span class="yen">円</span></div>
-      <div class="sub">を経費へ繰り入れ</div>`:'<div class="rule"></div>'}
+    <div class="rule"></div>
     <div class="rule"></div><div class="sub">おつかれさまでした</div>`});
 }
 function luckyRoll(el){
@@ -6804,7 +6751,7 @@ function luckyRoll(el){
       if(step<34) later(run,step<22?60:60+(step-22)*(step-22)*8);
       else{ stopRoll(); nameEl.textContent=win[i]||"—"; pluck(i); 
         listEl.insertAdjacentHTML("beforeend",
-          `<div class="winner">${esc(win[i]||"—")}${U("prize")&&+PZ().lucky?`<em>${yen(PZ().lucky)}円</em>`:""}</div>`);
+          `<div class="winner">${esc(win[i]||"—")}${U("prize")&&nz(giftOf("lucky").item)?`<em>${esc(giftOf("lucky").item)}</em>`:""}</div>`);
         if(i+1<win.length) later(()=>spin(i+1),700);
         else later(()=>applause(3.0),300);
       }};
@@ -6844,11 +6791,12 @@ function drawPair(el){
 }
 function reveal(el,lv){const v=el.querySelector("#veil");startRoll();
   later(()=>{stopRoll();if(v)v.classList.remove("hidden");revealTone(lv);},lv===1?2100:1500);}
-function countUp(id,target){
+/* step は数え上げの刻み。口数のような小さな数は 1 で数える（100刻みだと最後まで0のまま） */
+function countUp(id,target,step){
   const el=document.getElementById(id);if(!el)return;
-  const dur=1500,t0=performance.now();let last=0;
+  const dur=1500,t0=performance.now();let last=0,st=step||100;
   const f=t=>{const p=Math.min(1,(t-t0)/dur),e=1-Math.pow(1-p,3);
-    el.textContent=yen(Math.round(target*e/100)*100);
+    el.textContent=yen(Math.round(target*e/st)*st);
     if(t-last>Math.max(40,260*p*p)){last=t;tickUp();}
     if(p<1)requestAnimationFrame(f);else{el.textContent=yen(target);land();}};
   requestAnimationFrame(f);

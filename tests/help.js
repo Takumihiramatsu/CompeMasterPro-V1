@@ -48,25 +48,28 @@ chk('印刷ボタンがある', H.includes('window.print()'));
 console.log('\n=== 4. 設定が反映される（動的）===');
 chk('ダブルペリアの式が出る', H.includes('隠しホール合計 × 1.5 − 72')&&H.includes('上限 30'),
     (H.match(/ハンディ ＝[^<]*/)||[''])[0]);
-chk('馬券の単価', H.includes('1口 200円'));
+/* V1（2026-09-28、M1）：予想に単価は無い。お金がかからないことを説明している */
+chk('予想にお金がかからない旨', H.includes('予想にお金はかかりません'));
 chk('GTOの方式', H.includes('本日の方式は<b>3連複</b>'));
 chk('枠数と組合せ数', H.includes('現在 8枠・36通り'), (H.match(/現在 \d+枠・\d+通り/)||[''])[0]);
-chk('会費の対象人数', H.includes('対象は 16名'));
+chk('プレーの経費を払う人数', H.includes('プレーの経費は 16名'));
+chk('支払額が成績で変わらない旨', H.includes('成績や予想では変わりません'));
 /* 2026-09-20：単勝・複勝を作っていない理由を明記（設計書§2.3の見直しに合わせて） */
 chk('単勝・複勝を作っていない理由が出る', H.includes('単勝・複勝を作っていない理由'));
 chk('単勝の理由：優勝の賞と重複', H.includes('「優勝」の賞と当てる対象が重なる'));
-chk('複勝の理由：配当が薄い', H.includes('的中しやすいぶん配当が薄くなり'));
+chk('複勝の理由：当てる楽しみが小さい', H.includes('的中しやすいぶん当てる楽しみが小さくなる'));
 
 console.log('\n=== 5. 設定を変えると説明も変わる ===');
 app.SCset('system','new'); app.SCset('hidden',[3,6,9,12,15,18]);
-app.DB().meta.gMode='3連単'; app.DB().meta.kPrice=300;
+app.DB().meta.gMode='3連単';
+app.DB().meta.budget.collect.push({label:'運営費',amt:500,mode:'each',to:'all'});
 app.DB().meta.sc.hcUse=false;
 app.go('help');
 const H2=store['pane'].innerHTML;
 chk('新ペリアの式に変わる', H2.includes('× 3 − 72'), (H2.match(/隠しホール合計 × [\d.]+/)||[''])[0]);
 chk('上限なしと表示', H2.includes('<b>上限なし</b>'));
 chk('3連単に変わる', H2.includes('本日の方式は<b>3連単</b>'));
-chk('単価300円に変わる', H2.includes('1口 300円'));
+chk('経費の項目数が変わる（3→4項目）', H2.includes('（4項目）')&&H.includes('（3項目）'));
 app.SCset('entry','sheet'); app.go('help');
 chk('集計表モードの説明に変わる', store['pane'].innerHTML.includes('ゴルフ場の集計表のグロス・HDCPをそのまま'));
 

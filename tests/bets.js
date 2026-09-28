@@ -101,7 +101,9 @@ chk('馬券80口', app.calcK().units===80, app.calcK().units+'口 / '+app.DB().k
 store['gp'].value=N.map((n,i)=>`${n}\t${N[(i+1)%16]}\t${N[(i+5)%16]}\t${N[(i+9)%16]}\t2`).join('\n');
 app.gPaste(); A=[]; app.gPasteApply();
 chk('GTO32口', app.calcG().units===32, app.calcG().units+'口 / '+app.DB().gto.length+'行');
-chk('回収額 16,000+16,000', app.calcK().sales+app.calcG().sales===32000, app.calcK().sales+app.calcG().sales);
+/* V1（2026-09-28、M1）：予想に代金は無い。売上（回収額）の代わりに、お金の項目を返さないことを見る */
+chk('予想の集計に売上・配当の項目が無い（お金を持たない）', ['sales','pay','left','refund','allSales','badTotal'].every(k=>!(k in app.calcK())&&!(k in app.calcG())),
+    Object.keys(app.calcK()).join(','));
 
 console.log('\n=== 6. 画面 ===');
 /* 段階6で馬券とGTOを画面の中で切り替えるようにした。それぞれの画面で確かめる */

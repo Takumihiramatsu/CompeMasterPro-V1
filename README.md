@@ -8,15 +8,41 @@
 
 ## 状態
 
-**開発中（M0：リポジトリの準備）。** 実装の順番は [SPEC-V1.md](SPEC-V1.md) の「9.」にあります。
+**M0（リポジトリの準備）が完了。次は M1（お金を経費だけにする）。** 実装の順番は [SPEC-V1.md](SPEC-V1.md) の「9.」、
+いまどこまで進んだかは [HANDOVER.md](HANDOVER.md) の「現在地」にあります。
 
-## 前身との関係
+M0 の時点では、アプリの画面と機能は社内版（v68）と同じです。変えたのは端末の保存場所とキャッシュの分離だけです。
 
-土台は社内用の [CompeMaster Pro v68](https://github.com/Takumihiramatsu/CompeMasterPro)（完成版・凍結）です。
-v68 にある馬券・GTO・罰金・賞金の精算は、V1 にはありません。**V1 と v68 の間で変更を行き来させないでください。**
+## 文書の読み分け
+
+| 文書 | 読む人・読む場面 |
+|---|---|
+| [SPEC-V1.md](SPEC-V1.md) | **仕様の正本。** 何を作るか・決定事項・未決事項 |
+| [HANDOVER.md](HANDOVER.md) | 作業を引き継ぐ人。いまどこまで進んだか、次に何をするか |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 開発する人。手順・変えてはいけない決めごと・過去の落とし穴 |
+| [docs/README.md](docs/README.md) | アプリを配る人。置き場所と配布のしかた |
+
+## 新しいチャットで続きをするとき
+
+次の一文を送ってください。
+
+> CompeMaster Pro V1（ゴルフ場向けコンペ運営アプリ）の開発の続きです。
+> まず https://github.com/Takumihiramatsu/CompeMasterPro-V1 を `git clone` し、
+> `HANDOVER.md` の「現在地」から読んでください。そのうえで、◯◯をしたいです。
+
+個別のファイルは `https://raw.githubusercontent.com/Takumihiramatsu/CompeMasterPro-V1/main/<パス>` で直接読めます。
 
 ## 作業を始める前に
 
 1. 必ず `git clone` で最新を取ってから始めます（手元のコピーから始めると、他の作業を消します）
 2. `SPEC-V1.md` の「10. 決定事項」「11. 未決事項」を読みます
-3. `tests/` の全テストが NG 0 であることを確かめてから変更します
+3. `tests/` の全テスト（29本）が NG 0 であることを確かめてから変更します
+4. 公開する前に `tests/` で `node privacy.js` を通します（公開リポジトリです）
+
+テストやサンプルに出てくる氏名は、すべて架空のものに置き換えてあります。
+
+## 前身との関係
+
+土台は社内用の [CompeMaster Pro v68](https://github.com/Takumihiramatsu/CompeMasterPro)（完成版・凍結）です。
+v68 にある馬券・GTO・罰金・賞金の精算は、V1 では M1〜M4 で経費とポイントに作り替えます。
+**V1 と v68 の間で変更を行き来させないでください。** 社内版の開発の経緯は v68 の `HANDOVER.md` にあります。
